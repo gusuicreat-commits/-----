@@ -36,6 +36,12 @@ KIND_DESCRIPTIONS = '''各 kind 的 params：
   - `weld_macro`：`{"fact":"F_weld_tolerance","analogy":"A_xxx"}`'''
 PLANNER_SYSTEM = '''你是工业科普短视频编导，为超大起重机做 {target_s}±10 秒科普片，6–9 个镜头。
 叙事：开场钩子 → 有多大（类比）→ 结构 → 怎么动 → 焊缝有多准 → 收尾。
+整片镜头安排要求：
+- 如素材列表非空，至少安排 1 个 real_media 镜头，params.asset 必须取自素材列表的 id，并列入 asset_refs。
+- 必须安排 1 个 data_card 镜头，params.facts 列出 2–4 个最关键参数，只取给定的可引用参数。
+- 如有焊缝精度相关参数，必须安排 1 个 weld_macro 镜头讲焊缝精度，params.fact 引用该参数。
+- analogy 镜头安排 1–2 个，类比用于最直观的尺寸（长度或高度），焊缝微距不占此数量。
+局部改写时以上数量要求针对整片，保留未请求改写的镜头，不为补数量返回额外镜头。
 台词里禁止直接写任何数字（阿拉伯数字或中文数字计量）。参数必须用 {{F_id}}，
 类比必须用 {{A_<fact去掉F_>_<ref>}} 并在该镜头 analogy_requests 里登记；只能引用给定列表中的 fact。
 设备结构只能出现在 source=model 的镜头（model_orbit/analogy/motion/exploded/data_card/title/outro/weld_macro）或 real_media。

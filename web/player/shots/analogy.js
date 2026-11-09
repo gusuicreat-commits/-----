@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {box,mesh,orbit,ease,esc,clamp} from './common.js';
+import {box,mesh,frameParallel,esc,clamp} from './common.js';
 const defaults={football_field:105,building_floor:3,boeing747:64.4,hair:.00007,person:1.75,bus:12};
 function line(g,points,color='#ffffff'){const m=new THREE.Line(new THREE.BufferGeometry().setFromPoints(points.map(p=>new THREE.Vector3(...p))),new THREE.LineBasicMaterial({color}));g.add(m);}
 export function setup(ctx,shot){const a=ctx.timeline.analogies?.[shot.params.analogy];if(!a)throw new Error('类比参数不存在');const g=new THREE.Group();g.userData.a=a;const ref=a.ref_size_m||defaults[a.ref],r=new THREE.Group();g.add(r);g.userData.ref=r;
@@ -7,10 +7,73 @@ export function setup(ctx,shot){const a=ctx.timeline.analogies?.[shot.params.ana
  else if(a.ref==='building_floor'){const floors=Math.max(1,Math.ceil(a.ratio)),height=Math.max(.1,a.ratio)*ref;box(r,13,height,12,0,height/2,0,'#cad4da');for(let j=0;j<floors;j++){box(r,13.2,.12,12.2,0,j*ref+.06,0,'#536675');for(let i=0;i<4;i++)box(r,1.5,ref*.52,.1,-4.5+i*3,Math.min(j*ref+ref/2,height-ref*.26),6.1,'#2a4d67');}g.userData.height=height;}
  else if(a.ref==='bus'){box(r,ref,3.2,2.5,0,1.9,0,'#e0d6be');box(r,ref*.88,1.1,2.56,0,2.4,0,'#20425a');for(const x of [-ref*.33,ref*.33])for(const z of [-1.3,1.3]){const wheel=mesh(new THREE.CylinderGeometry(.55,.55,.3,20),'#18212a');wheel.rotation.x=Math.PI/2;wheel.position.set(x,.6,z);r.add(wheel);}}
  else if(a.ref==='person'){const body=mesh(new THREE.CapsuleGeometry(.18,.55,4,12),'#243c50');body.position.y=.95;r.add(body);const head=mesh(new THREE.SphereGeometry(.15,16,12),'#ffae59');head.position.y=1.6;r.add(head);for(const x of [-.11,.11])box(r,.14,.65,.16,x,.325,0,'#243c50');r.scale.setScalar(ref/1.75);}
- else if(a.ref==='boeing747'){const fuselage=mesh(new THREE.CylinderGeometry(3,2,70,24),'#d6dee4');fuselage.rotation.x=Math.PI/2;fuselage.position.y=6;r.add(fuselage);const wing=new THREE.Shape();wing.moveTo(-ref/2,15);wing.lineTo(-4,-8);wing.lineTo(4,-8);wing.lineTo(ref/2,15);wing.lineTo(4,6);wing.lineTo(-4,6);wing.closePath();const m=mesh(new THREE.ExtrudeGeometry(wing,{depth:.6,bevelEnabled:false}),'#b9c9d6');m.rotation.x=Math.PI/2;m.position.y=6;r.add(m);box(r,22,.5,7,0,6,29,'#b9c9d6');box(r,.6,9,10,0,9,28,'#e6edf2');}
+ else if(a.ref==='boeing747'){
+  // 翼展沿 x，与主梁共用尺度轴；机身沿 z。
+  const scale=ref/64.4;
+  const fuselage=mesh(new THREE.CylinderGeometry(3,2,70,32),'#d6dee4');
+  fuselage.rotation.x=Math.PI/2;fuselage.position.y=6;r.add(fuselage);
+  const wing=new THREE.Shape();
+  wing.moveTo(-32.2,15);wing.lineTo(-4,-8);wing.lineTo(4,-8);wing.lineTo(32.2,15);wing.lineTo(4,6);wing.lineTo(-4,6);wing.closePath();
+  const wings=mesh(new THREE.ExtrudeGeometry(wing,{depth:.8,bevelEnabled:false}),'#d6dee4');
+  wings.name='wings';wings.rotation.x=Math.PI/2;wings.position.y=6;r.add(wings);
+  box(r,22,.6,7,0,6,29,'#d6dee4');box(r,.6,9,10,0,9,28,'#d6dee4');
+  for(const part of [...r.children]){
+   part.castShadow=true;part.receiveShadow=true;
+   const edges=new THREE.LineSegments(new THREE.EdgesGeometry(part.geometry,25),new THREE.LineBasicMaterial({color:'#263b4b'}));
+   part.add(edges);
+  }
+  r.scale.setScalar(scale);
+ }
  else if(a.ref==='hair'){throw new Error('头发丝类比仅支持焊缝微距镜头');}
  else throw new Error('不支持的类比参照物');
- const heightAxis=a.axis==='height';g.userData.destination=heightAxis?new THREE.Vector3(ctx.size.x/2+18,0,0):new THREE.Vector3(0,0,ctx.size.z/2+ref*(a.ref==='football_field'?.40:.2)+9);ctx.scene.add(g);ctx.groups.set(shot.id,g);
+ const crane=new THREE.Box3().setFromObject(ctx.model.getObjectByName('crane')||ctx.model);
+ const girder=new THREE.Box3().setFromObject(ctx.model.getObjectByName('girder')||ctx.model);
+ const local=new THREE.Box3().setFromObject(r),heightAxis=a.axis==='height';
+ // 参照物从第一帧起就与设备对齐，不用横向滑入破坏真实尺度。
+ if(heightAxis){
+  const leg=new THREE.Box3().setFromObject(ctx.model.getObjectByName('leg_right')||ctx.model);
+  r.position.set(leg.max.x+6-local.min.x,crane.min.y-local.min.y,leg.getCenter(new THREE.Vector3()).z-local.getCenter(new THREE.Vector3()).z);
+ }else r.position.set(girder.min.x-local.min.x,crane.min.y-local.min.y,crane.min.z-6-local.max.z);
+ ctx.scene.add(g);ctx.groups.set(shot.id,g);
 }
-export function render(ctx,shot,t,dur){const g=ctx.groups.get(shot.id),a=g.userData.a,p=t/dur;g.visible=true;g.position.copy(g.userData.destination);g.position.x+=(1-ease((p-.12)/.42))*165;const target=ctx.center.clone();target.z+=a.axis==='length'?40:0;target.y=a.axis==='length'?10:ctx.center.y;if(a.axis==='length')target.x-=18;orbit(ctx,-12,a.axis==='length'?38:18,a.axis==='length'?2.2:1.55,target);const opacity=clamp((p-.37)/.12);ctx.content.innerHTML=`<div class="section-title"><small>尺度对照 / 等比例</small>${a.axis==='height'?'把高度放回日常':'把长度放回日常'}</div><div class="analogy-copy" style="opacity:${opacity}">${esc(a.text)}<small>参照尺寸 ${esc(a.ref_size_m||defaults[a.ref])} m · 按真实比例呈现</small></div>`;
- if(p>.4){const f=ctx.timeline.facts[a.fact],width=1040,x=440,y=770;if(a.axis==='height'){ctx.labels.innerHTML=`<g opacity="${opacity}"><path d="M 1540 290 V 730"/>${Array.from({length:11},(_,i)=>`<path d="M 1531 ${290+i*44} h 18"/>`).join('')}<text x="1580" y="500">${esc(f?.value)} ${esc(f?.unit)}</text></g>`;return;}ctx.labels.innerHTML=`<g opacity="${opacity}"><path d="M ${x} ${y} h ${width}"/>${Array.from({length:11},(_,i)=>`<path d="M ${x+i*width/10} ${y-9} v 18"/>`).join('')}<text x="${x+width/2}" y="${y-20}" text-anchor="middle">${esc(f?.name)} ${esc(f?.value)} ${esc(f?.unit)}</text></g>`;}}
+function screen(ctx,point){const p=point.clone().project(ctx.camera);return {x:(p.x+1)*960,y:(1-p.y)*540};}
+function dimension(ctx,start,end,color,heightAxis){
+ const a=screen(ctx,start),b=screen(ctx,end),tick=8;
+ const ticks=heightAxis?`M ${a.x-tick} ${a.y} h ${tick*2} M ${b.x-tick} ${b.y} h ${tick*2}`:`M ${a.x} ${a.y-tick} v ${tick*2} M ${b.x} ${b.y-tick} v ${tick*2}`;
+ return `<g class="dimension" style="--dimension-color:${color}"><path d="M ${a.x} ${a.y} L ${b.x} ${b.y} ${ticks}"/></g>`;
+}
+export function render(ctx,shot,t,dur){
+ const g=ctx.groups.get(shot.id),a=g.userData.a;g.visible=true;
+ const crane=new THREE.Box3().setFromObject(ctx.model.getObjectByName('crane')||ctx.model),girder=new THREE.Box3().setFromObject(ctx.model.getObjectByName('girder')||ctx.model),ref=new THREE.Box3().setFromObject(g.userData.ref);
+ const heightAxis=a.axis==='height';
+ frameParallel(ctx,[crane,ref],heightAxis?{angle:0,elevation:8,height:.62,cy:.47}:{angle:-15,elevation:35,width:.62,cy:.43});
+ const f=ctx.timeline.facts[a.fact],ground=crane.min.y;
+ const refText=a.ref==='building_floor'?`参照 ${Number(a.ratio.toFixed(2))} 层 × ${a.ref_size_m||defaults[a.ref]} m`:`参照 ${a.ref_size_m||defaults[a.ref]} m`;
+ const dimensions=heightAxis?[
+  [new THREE.Vector3(crane.min.x-3,ground,crane.max.z),new THREE.Vector3(crane.min.x-3,crane.max.y,crane.max.z),`${f?.name||'整机高度'} ${f?.value??ctx.size.y} ${f?.unit||'m'}`,'#ff8a1f'],
+  [new THREE.Vector3(ref.max.x+3,ground,ref.max.z),new THREE.Vector3(ref.max.x+3,ref.max.y,ref.max.z),refText,'#38d1ff']
+ ]:[
+  [new THREE.Vector3(girder.min.x,girder.max.y+3,girder.max.z),new THREE.Vector3(girder.max.x,girder.max.y+3,girder.max.z),`主梁 ${f?.value??Number((girder.max.x-girder.min.x).toFixed(2))} ${f?.unit||'m'}`,'#ff8a1f'],
+  [new THREE.Vector3(ref.min.x,ref.max.y+1,ref.max.z+3),new THREE.Vector3(ref.max.x,ref.max.y+1,ref.max.z+3),refText,'#38d1ff']
+ ];
+ if(a.ref==='boeing747'){
+  // 尺寸端点与真实翼尖共用 x、z，斜视时仍保持屏幕横向对齐。
+  dimensions[1][0]=g.userData.ref.localToWorld(new THREE.Vector3(-32.2,7.5,15));
+  dimensions[1][1]=g.userData.ref.localToWorld(new THREE.Vector3(32.2,7.5,15));
+ }
+ const labels=dimensions.map(([start,end,text,color],index)=>{
+  const p=screen(ctx,start.clone().lerp(end,.5));
+  return {x:p.x,y:p.y-(heightAxis?0:28),text,color,side:heightAxis?(index===0?'left':'right'):'center'};
+ }).sort((a,b)=>a.y-b.y);
+ for(let i=1;i<labels.length;i++)labels[i].y=Math.max(labels[i].y,labels[i-1].y+40);
+ const opacity=clamp(t/.6);
+ ctx.content.innerHTML=`<div class="section-title analogy-title"><small>尺度对照 / 等比例</small>${heightAxis?'把高度放回日常':'把长度放回日常'}</div><div class="analogy-copy" style="opacity:${opacity}">${esc(a.text)}<small>参照尺寸 ${esc(a.ref_size_m||defaults[a.ref])} m · 按真实比例呈现</small></div>`+
+  labels.map(p=>`<div class="dimension-label ${p.side}" style="left:${p.x}px;top:${p.y}px;--dimension-color:${p.color};opacity:${opacity}">${esc(p.text)}</div>`).join('');
+ // 按真实字体宽度约束边界，长中文标签也不会被画布裁掉。
+ for(const node of ctx.content.querySelectorAll?.('.dimension-label')||[]){
+  const width=node.offsetWidth,x=Number.parseFloat(node.style.left);
+  const offset=node.classList.contains('left')?-width-14:node.classList.contains('right')?14:-width/2;
+  node.style.left=`${clamp(x+offset,40,1880-width)-offset}px`;
+ }
+ ctx.labels.innerHTML=`<g opacity="${opacity}">${dimensions.map(([start,end,,color])=>dimension(ctx,start,end,color,heightAxis)).join('')}</g>`;
+}
