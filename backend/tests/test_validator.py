@@ -178,3 +178,35 @@ def test_check_error_from_motion_does_not_hide_other_checks(scenario, monkeypatc
 def test_duration_boundaries(scenario, duration):
     write_shot(scenario, shot(duration_s=duration))
     assert not codes(scenario)
+
+
+@pytest.mark.parametrize("narration,blocked", [
+    ("整机高51米，差不多相当于17层楼那么高那么高！", True),
+    ("主梁总长104米，相当于相当于1.6波音747的翼展。", True),
+    ("错边不超过0.5毫米，也就大约只有7根头发丝并排那么宽粗细", True),
+    ("那么高那么震撼", True), ("那么宽那么震撼", True),
+    ("差不多相当于差不多一样长", True), ("相当于大致相当于楼房", True),
+    ("大约也就是大约那么宽", True), ("差不多也就差不多那么长", True),
+    ("主梁主梁撑起重量", True),
+    ("稳稳撑着", False), ("看看它", False), ("慢慢移动，轻轻落下", False),
+    ("来来看看，哈哈哈哈", False), ("……    ！！", False),
+    ("整机高51米，相当于17层楼那么高！", False),
+    ("大约这么高；大约那么宽", False),
+    ("相当于一座楼的高度，相当于一个球场的长度", False),
+    ("大约只有这边看到的所有那些大约这么宽", False),
+])
+def test_duplicate_phrase(scenario, narration, blocked):
+    write_shot(scenario, shot(narration=narration))
+    issues = [i for i in validate(scenario, "r1")["issues"] if i["code"] == "DUPLICATE_PHRASE"]
+    assert bool(issues) == blocked
+    if blocked:
+        assert issues[0]["severity"] == "block"
+        assert issues[0]["hint"] == "删除占位前后多余的修饰词"
+
+
+def test_duplicates_checked_after_placeholder_expansion(scenario):
+    analogy = compute("A_length_boeing747", {"id": "F_length", "value": 104, "unit": "m"}, "boeing747", "length")
+    write_shot(scenario, shot(narration="主梁长{{F_length}}，相当于{{A_length_boeing747}}。"), [analogy])
+    assert "DUPLICATE_PHRASE" in codes(scenario)
+    write_shot(scenario, shot(narration="主梁长{{F_length}}，{{A_length_boeing747}}。"), [analogy])
+    assert "DUPLICATE_PHRASE" not in codes(scenario)

@@ -285,7 +285,9 @@
       "axis": "length",
       "ratio": 0.9904761904761905,
       "text": "差不多是一个标准足球场的长度",
-      "ref_size_m": 105
+      "ref_size_m": 105,
+      "ref_size": 105,
+      "ref_unit": "m"
     },
     "A_weld": {
       "fact": "F_weld_tolerance",
@@ -293,7 +295,9 @@
       "axis": "length",
       "ratio": 7.142857142857142,
       "text": "约 7 根头发丝并排的宽度",
-      "ref_size_m": 7e-05
+      "ref_size_m": 7e-05,
+      "ref_size": 0.07,
+      "ref_unit": "mm"
     }
   },
   "assets": {

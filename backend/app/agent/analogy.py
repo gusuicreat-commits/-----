@@ -4,7 +4,7 @@ import math
 REFS = {
     "football_field": {"name": "标准足球场", "size": 105, "unit": "m", "axes": ["length"], "basis": "国际足联推荐比赛场地长105米"},
     "building_floor": {"name": "层住宅楼", "size": 3.0, "unit": "m", "axes": ["height"], "basis": "住宅层高约3米"},
-    "boeing747": {"name": "波音747的翼展", "size": 64.4, "unit": "m", "axes": ["length"], "basis": "波音747-400翼展约64.4米"},
+    "boeing747": {"name": "个波音747的翼展", "size": 64.4, "unit": "m", "axes": ["length"], "basis": "波音747-400翼展约64.4米"},
     "bus": {"name": "辆12米长的公交车", "size": 12, "unit": "m", "axes": ["length"], "basis": "城市公交车长约12米"},
     "person": {"name": "个成年人", "size": 1.75, "unit": "m", "axes": ["height"], "basis": "成年人身高约1.75米"},
     "car": {"name": "辆小轿车", "size": 1.5, "unit": "t", "axes": ["mass"], "basis": "家用轿车约1.5吨"},
@@ -40,5 +40,10 @@ def compute(analogy_id: str, fact: dict, ref: str, axis: str) -> dict:
         text = f"相当于{number}{item['name']}"
     return {"id": analogy_id, "fact": fact["id"], "ref": ref, "axis": axis,
             "ratio": round(ratio, 3), "text": text,
-            "ref_size_m": item["size"] * UNIT_SCALE[item["unit"]][1] if axis in {"length", "height"} else item["size"],
+            "ref_size_m": item["size"] * UNIT_SCALE[item["unit"]][1] if item["unit"] != "t" else None,
+            "ref_size": item["size"], "ref_unit": item["unit"],
             "basis": item["basis"], "formula": f"{value:g} ÷ {item['size']:g} ≈ {ratio:.2f}"}
+
+
+def preview(fact: dict, ref: str, axis: str) -> str:
+    return compute("", fact, ref, axis)["text"]

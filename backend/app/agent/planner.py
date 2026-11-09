@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from app import llm, storage
 from app.events import emit, tool_call
 from app.model3d.glbinfo import read_glb_nodes
-from .analogy import REFS, compute
+from .analogy import REFS, compute, preview
 from .text import PLACEHOLDER
 
 PARAM_DEFAULTS = {
@@ -44,6 +44,7 @@ PLANNER_SYSTEM = '''你是工业科普短视频编导，为超大起重机做 {t
 局部改写时以上数量要求针对整片，保留未请求改写的镜头，不为补数量返回额外镜头。
 台词里禁止直接写任何数字（阿拉伯数字或中文数字计量）。参数必须用 {{F_id}}，
 类比必须用 {{A_<fact去掉F_>_<ref>}} 并在该镜头 analogy_requests 里登记；只能引用给定列表中的 fact。
+{{A_x}} 会展开成完整短语（见预览表），台词中不要在它前后重复『相当于』『差不多』『大约』『那么高/长/宽/粗』等词，直接写如『整机高{{F_overall_height}}，{{A_overall_height_building_floor}}！』。
 设备结构只能出现在 source=model 的镜头（model_orbit/analogy/motion/exploded/data_card/title/outro/weld_macro）或 real_media。
 ai_broll 只用于氛围/转场，params.prompt 描述画面且不得出现起重机、门机、主梁、吊钩等设备词，caption 同样禁止。
 provenance=reference 的素材是「参考实拍（非本机）」，配这类画面的台词不能说「这台」「本机」「我们的」，要说「像这样的造船门机」等。
@@ -122,7 +123,24 @@ def _context(pid: str) -> dict:
 
 
 def _prompt(context: dict, **extra: Any) -> str:
-    return json.dumps({**context, **extra}, ensure_ascii=False, sort_keys=True)
+    previews = []
+    for fact in context["facts"]:
+        if fact.get("status", "verified") not in {"verified", "confirmed"}:
+            continue
+        unit = fact["unit"]
+        label = fact["id"] + fact.get("name", "")
+        if unit == "t":
+            axis = "mass"
+        elif unit in {"m", "mm"}:
+            axis = ("thickness" if any(word in label for word in ("thickness", "tolerance", "厚", "错边", "焊缝"))
+                    else "height" if "height" in label or "高" in label else "length")
+        else:
+            continue
+        for ref, item in REFS.items():
+            if axis in item["axes"]:
+                aid = f"A_{fact['id'].removeprefix('F_')}_{ref}"
+                previews.append("{{" + aid + "}} → " + preview(fact, ref, axis))
+    return json.dumps({**context, **extra, "类比展开预览": previews}, ensure_ascii=False, sort_keys=True)
 
 
 def _normalise(raw: dict, sid: str, model: dict | None, facts: dict[str, dict], notes: list[str]) -> tuple[dict, list[dict]]:

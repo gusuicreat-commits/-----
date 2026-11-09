@@ -8,7 +8,7 @@ from app import storage
 from app.events import emit
 from app.model3d.rig import motion_speedup
 from .planner import PARAM_DEFAULTS, expected_source
-from .text import PLACEHOLDER, find_unsourced_numbers, resolve
+from .text import PLACEHOLDER, find_duplicate_phrases, find_unsourced_numbers, resolve
 
 EQUIPMENT = re.compile(r"起重机|门机|龙门吊|吊车|主梁|支腿|吊钩|小车|crane|gantry|hook|girder", re.I)
 
@@ -132,6 +132,11 @@ def validate(pid: str, run: str) -> dict:
                     add("REFERENCE_ASSET_CLAIM", "warn", "参考实拍台词暗示画面为本设备", "改为「像这样的造船门机」等泛指表述", sid)
         with check("台词解析", sid):
             shot["narration_resolved"] = resolve(narration, facts, analogies)
+        with check("台词重复短语", sid):
+            duplicates = find_duplicate_phrases(shot["narration_resolved"])
+            if duplicates:
+                add("DUPLICATE_PHRASE", "block", "台词含重复或冗余短语：" + "、".join(f"「{p}」" for p in duplicates),
+                    "删除占位前后多余的修饰词", sid)
         with check("台词时长", sid):
             if len(shot["narration_resolved"]) / 4.5 > shot["duration_s"] + 1:
                 add("NARRATION_TOO_LONG", "warn", "台词预计朗读时间超出镜头时长", "缩短台词或延长镜头", sid)

@@ -1,7 +1,7 @@
 {
  "task": "plan",
  "note": "人工编写的离线录制，未调用真实大模型",
- "system_head": "你是工业科普短视频编导，为超大起重机做 45±10 秒科普片，6–9 个镜头。\n叙事：开场钩子 → 有多大（类比）→ 结构 → 怎么动 → 焊缝有多准 → 收尾。\n台词里禁止直接写任何数字（阿拉伯数字或中文数字计量）。参数必须用 {{F_id}}，\n类比必须用 {{A_<fact去掉F_>_<ref>}} 并在该镜头 analogy_requests 里登记；只能引用给定列表中的 fact。\n设备结构只能出现在 source=model 的镜头（model_orbit/analogy/motion/exploded/data_card/title/outro/weld_macro）或 real",
+ "system_head": "你是工业科普短视频编导，为超大起重机做 45±10 秒科普片，6–9 个镜头。\n叙事：开场钩子 → 有多大（类比）→ 结构 → 怎么动 → 焊缝有多准 → 收尾。\n整片镜头安排要求：\n- 如素材列表非空，至少安排 1 个 real_media 镜头，params.asset 必须取自素材列表的 id，并列入 asset_refs。\n- 必须安排 1 个 data_card 镜头，params.facts 列出 2–4 个最关键参数，只取给定的可引用参数。\n- 如有焊缝精度相关参数，必须安排 1 个 weld_macro 镜头讲焊缝精度，params.fact 引用该参数。\n- analogy ",
  "user_head": "{\"assets\": [{\"id\": \"IMG_01\", \"kind\": \"image\", \"provenance\": \"reference\", \"tags\": [\"参考实拍\"], \"title\": \"船厂全景\"}, {\"id\": \"IMG_02\", \"kind\": \"image\", \"provenance\": \"reference\", \"tags\": [\"参考实拍\"], \"title\": \"装配现场\"}, {\"id\": \"IMG_03\", \"kind\": \"image\", \"provenance\": \"reference\", \"tags\": [\"参考实拍\"], \"title\": \"焊缝近景\"}, {\"id\": \"IMG_04\", \"kind\": \"image\", \"provenance\": \"reference\", \"tags\": [\"参考实拍\"], \"title\": \"轨道视角\"}, {\"id\": \"IMG_05\", \"kind\": \"image\", \"provenance\": \"reference\", \"tags\": [\"参考实拍\"], \"title\": \"夜间船厂\"}], \"brief\": \"口语化解释超大门机的尺寸、结构、运动与焊缝精度，亲切且有出处。\", \"facts\": [{\"id\": \"F_rated_load\", \"name\": \"额定起重量\", \"page\": 2, \"unit\": \"t\", \"value\": 1230.0}, {\"id\": \"F_girder_length\", \"name\": \"主梁总长\", \"page\": 2, \"unit\": \"m\", \"value\": 104.0}, {\"id\": \"F_overall_height\", \"name\": \"整机高度\", \"page\": 2, \"unit\": \"m\", \"value\": 51.0}, ",
  "response": {
   "title": "大块头，也有细功夫",

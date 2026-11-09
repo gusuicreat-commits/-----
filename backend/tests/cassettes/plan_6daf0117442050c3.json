@@ -131,5 +131,7 @@
     }
    }
   ]
- }
+ },
+ "system_head": "你是工业科普短视频编导，为超大起重机做 45±10 秒科普片，6–9 个镜头。\n叙事：开场钩子 → 有多大（类比）→ 结构 → 怎么动 → 焊缝有多准 → 收尾。\n整片镜头安排要求：\n- 如素材列表非空，至少安排 1 个 real_media 镜头，params.asset 必须取自素材列表的 id，并列入 asset_refs。\n- 必须安排 1 个 data_card 镜头，params.facts 列出 2–4 个最关键参数，只取给定的可引用参数。\n- 如有焊缝精度相关参数，必须安排 1 个 weld_macro 镜头讲焊缝精度，params.fact 引用该参数。\n- analogy ",
+ "user_head": "{\"assets\": [{\"id\": \"IMG_ODENSE\", \"kind\": \"image\", \"provenance\": \"reference\", \"tags\": [\"门式起重机\", \"造船厂\"], \"title\": \"Big Gantry crane in Odense harbour.JPG\"}, {\"id\": \"IMG_GIRDER\", \"kind\": \"image\", \"provenance\": \"reference\", \"tags\": [\"钢结构\"], \"title\": \"High Performance Steel Girders-1 IA (8424273122).jpg\"}, {\"id\": \"IMG_BELFAST\", \"kind\": \"image\", \"provenance\": \"reference\", \"tags\": [\"门式起重机\", \"造船厂\"], \"title\": \"Ballymacarrett - Goliath & Samson cranes at Harland And Wolff - 20240908093337.jpg\"}, {\"id\": \"IMG_TIG\", \"kind\": \"image\", \"provenance\": \"reference\", \"tags\": [\"焊接\"], \"title\": \"US Navy 120209-N-RG587-154 Hull Maintenance Technician Fireman Adam Garcia uses a tig welder to join two pieces of steel in the metalsmithing shop.jpg\"}, {\"id\": \"IMG_ULSAN\", \"kind\": \"image\", \"provenance\": \"reference\", \"ta"
 }
