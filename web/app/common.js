@@ -1,6 +1,9 @@
 export const $ = (selector, root = document) => root.querySelector(selector);
 export const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export const stages = [['ingest','资料入库','▤'],['model','三维模型','◇'],['plan','分镜规划','▦'],['validate','真实性校验','✓'],['tts','配音','♫'],['render','渲染','▣'],['compose','合成','▧'],['qa','画面质检','◎'],['report','溯源报告','▥']];
+export const stageLabel = stage => stages.find(([id]) => id === stage)?.[1] || stage || '准备中';
+export const displayIssue = issue => issue.severity === 'warn' && issue.code === 'VISUAL_QA' && issue.message?.includes('缺少录制')
+  ? {...issue, severity:'info', message:'回放模式未录制画面质检', hint:''} : issue;
 export const kinds = {title:'标题',model_orbit:'环绕展示',analogy:'尺寸类比',motion:'运动演示',exploded:'结构拆解',data_card:'参数卡',real_media:'实拍',ai_broll:'AI创意',weld_macro:'焊缝特写',outro:'片尾'};
 export const statuses = {verified:'已核验',needs_review:'待确认',confirmed:'人工确认',rejected:'已否决',pending:'待复核',approved:'已通过',changes:'需修改',running:'运行中',paused:'等待复核',done:'已完成',error:'运行失败',ok:'完成',warn:'需关注'};
 export const pill = status => `<span class="pill ${esc(status)}">${esc(statuses[status] || status)}</span>`;
@@ -37,8 +40,7 @@ export function mergeEvents(events) {
 export function generationProgress(state) {
   const run = state.run || {};
   const events = (state.events || []).filter(e => run.run && e.run === run.run);
-  const latest = events.at(-1);
-  const stage = stages.findIndex(([id]) => id === run.stage) >= stages.findIndex(([id]) => id === latest?.stage) ? run.stage : latest?.stage;
+  const stage = run.stage;
   const current = events.filter(e => e.stage === stage);
   const detail = current.findLast(e => e.detail?.frame != null || e.detail?.progress != null)?.detail || {};
   const hasFrames = Number.isFinite(detail.frame) && Number.isFinite(detail.total) && detail.total > 0;
@@ -46,7 +48,7 @@ export function generationProgress(state) {
   const completed = stages.filter(([id], index) => id !== stage && (
     run.stage_durations_s?.[id] != null || (index < stages.findIndex(([key]) => key === stage) && events.some(e => e.stage === id && ['ok','warn'].includes(e.status)))
   ));
-  return {label: stages.find(([id]) => id === stage)?.[1] || '准备中', completed,
+  return {label: stageLabel(stage), completed,
     percent: Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : null,
     progress: hasFrames ? `已渲染 ${detail.frame} / ${detail.total} 帧` : Number.isFinite(percent) ? `已完成 ${percent}%` : '正在处理，请稍候',
     summary: current.at(-1)?.summary || '正在准备本次生成任务'};
@@ -72,7 +74,29 @@ export async function readCallLogs(pid, count, events, read = request) {
 
 export function costSummary(llm, logs = []) {
   if (!llm) return '';
+  const cost = costDetail(llm, logs);
+  return cost.startsWith('回放模式') ? cost : `大模型调用 ${llm.calls} 次 · ${cost}`;
+}
+
+export function costDetail(llm, logs = []) {
+  if (!llm) return '费用待统计';
   if (llm.calls > 0 && logs.length === llm.calls && logs.every(log => log.backend === 'replay')) return '回放模式 · 不产生费用';
   const cost = Number.isFinite(llm.cost_usd) ? `已知费用 $${llm.cost_usd.toFixed(4)}` : '费用待统计';
-  return `大模型调用 ${llm.calls} 次 · ${cost}${llm.unknown_cost_calls ? ` · ${llm.unknown_cost_calls} 次费用未知，未计入合计` : ''}`;
+  return `${cost}${llm.unknown_cost_calls ? ` · ${llm.unknown_cost_calls} 次费用未知，未计入合计` : ''}`;
+}
+
+export function toolSummary(events, llm, logs = [], now = Date.now()) {
+  const calls = mergeEvents(events), models = calls.filter(e => e.tool.startsWith('llm.')).length;
+  // 每次运行取事件的时间跨度，避免并发工具耗时重复累加。
+  const runs = new Map();
+  for (const event of events) {
+    const time = Date.parse(event.ts); if (!Number.isFinite(time)) continue;
+    const span = runs.get(event.run) || [time, time];
+    runs.set(event.run, [Math.min(span[0], time), Math.max(span[1], time)]);
+  }
+  for (const call of calls.filter(e => e.status === 'start')) {
+    const span = runs.get(call.run); if (span) span[1] = Math.max(span[1], now);
+  }
+  const seconds = [...runs.values()].reduce((total, [start, end]) => total + (end - start) / 1000, 0);
+  return `大模型 ${models} 次 · 程序工具 ${calls.length - models} 次 · 总耗时 ${seconds.toFixed(1)} 秒 · ${costDetail(llm, logs)}`;
 }

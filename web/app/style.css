@@ -6,3 +6,7 @@
 
 .preview-running{min-height:270px;gap:12px}.preview-running progress{width:min(80%,360px);height:8px;accent-color:var(--cyan)}.completed-stages{list-style:none;padding:0;margin:4px 0 0;display:flex;flex-wrap:wrap;justify-content:center;gap:8px 16px;max-width:460px;font-size:12px;color:var(--green)}.generation-summary{max-width:90%}
 .analogy-calculation{margin:10px 0;padding:10px 12px;background:#241e34;border:1px solid #51406c;border-radius:6px;font-size:12px;color:var(--purple)}.analogy-calculation p{margin:5px 0;color:var(--text)}.analogy-calculation small{color:var(--muted)}
+
+#issues [data-severity="info"],#issues [data-severity="info"] .issue-item,.shot-issues .info{color:var(--muted)}
+#issues [data-severity="info"] summary{color:var(--muted)}
+.shot-issues .info{background:#19222d}

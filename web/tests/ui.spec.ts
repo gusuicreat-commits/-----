@@ -3,8 +3,8 @@ import {mkdir,readFile,rm} from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {mergeEvents,esc,fileURL,generationProgress,costSummary,readCallLogs} from '../app/common.js';
-import {narrationHTML} from '../app/studio.js';
+import {mergeEvents,esc,fileURL,generationProgress,costSummary,readCallLogs,displayIssue,toolSummary} from '../app/common.js';
+import {narrationHTML,createStudio} from '../app/studio.js';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const testRoot=process.env.KEPU_UI_TEST_ROOT!;
@@ -69,6 +69,7 @@ test.describe('真实后端操作流程',()=>{
  test.afterAll(async()=>{await page?.close(); if(pid) await rm(path.join(testRoot,'projects',pid),{recursive:true,force:true});});
  test('载入示例，素材五张、文档一份与空状态',async()=>{
   await page.goto('/');
+  await expect(page.locator('#open-film')).toBeDisabled();
   await expect(page.getByRole('heading',{name:'让重器的每一处细节，有据可循'})).toBeVisible();
   await noHorizontalOverflow(page);
   await page.screenshot({path:'test-results/ui/01-empty.png'});
@@ -102,6 +103,7 @@ test.describe('真实后端操作流程',()=>{
   prepareReplay(pid);
   await page.locator('#generate').click();
   await expect(page.locator('#run-status')).toContainText('运行中');
+  await expect(page.locator('#open-film')).toBeDisabled();
   await expect(page.locator('.preview-running')).toContainText('正在生成：');
   await expect(page.locator('#preview [data-action="seed"]')).toHaveCount(0);
   await page.screenshot({path:'test-results/ui/02-running.png'});
@@ -118,6 +120,7 @@ test.describe('真实后端操作流程',()=>{
   const events=eventText.trim().split('\n').map(line=>JSON.parse(line));
   let previous=-1;
   for(const tool of tools) { const index=events.findIndex(e=>e.tool===tool); expect(index).toBeGreaterThan(previous); previous=index; }
+  await expect(page.locator('#player-frame')).toHaveAttribute('data-ready','1');
   const frame=page.frameLocator('#player-frame');
   await expect.poll(()=>frame.locator('body').evaluate(()=> (window as any).__player?.duration || 0)).toBeGreaterThan(0);
   await frame.locator('body').evaluate(()=> (window as any).__player.ready);
@@ -127,6 +130,16 @@ test.describe('真实后端操作流程',()=>{
   const logs=await readFile(path.join(testRoot,'projects',pid,'report.json'),'utf8');
   expect(JSON.parse(logs).llm.calls).toBeGreaterThan(0);
   await expect(page.locator('#outputs')).toContainText('回放模式 · 不产生费用');
+  await expect(page.locator('#tool-count')).toContainText(/大模型 \d+ 次 · 程序工具 \d+ 次 · 总耗时 [\d.]+ 秒/);
+  await expect(page.locator('#tool-count')).toContainText('回放模式 · 不产生费用');
+  await expect(page.locator('#issues [data-severity="warn"]').filter({hasText:'缺少录制'})).toHaveCount(0);
+  await expect(page.locator('#issues [data-severity="info"]')).toContainText('回放模式未录制画面质检');
+  await expect(page.locator('#open-film')).toBeEnabled();
+  const opened=page.waitForEvent('popup');
+  await page.locator('#open-film').click();
+  const film=await opened;
+  await expect(film).toHaveURL(new RegExp(`/files/${pid}/renders/final\\.mp4$`));
+  await film.close();
   await expect(page.locator('#event-stream')).not.toContainText('耗时 0.0 秒');
   const timeline=await (await page.request.get(`/api/projects/${pid}/timeline`)).json();
   expect(timeline.shots.map((s:any)=>s.id)).toEqual(shotlist.shots.map((s:any)=>s.id));
@@ -142,6 +155,7 @@ test.describe('真实后端操作流程',()=>{
   await page.screenshot({path:'test-results/ui/03-completed.png'});
  });
  test('时间轴定位、出处胶囊与播放器同步',async()=>{
+  await expect(page.locator('#player-frame')).toHaveAttribute('data-ready','1');
   await expect(page.locator('.shot-card')).toHaveCount(shotlist.shots.length);
   await page.locator('.shot-card').nth(2).click();
   await expect(page.locator('#shot-detail')).toContainText(shotlist.shots[2].narration);
@@ -158,6 +172,7 @@ test.describe('真实后端操作流程',()=>{
   await page.locator('.analogy-calculation').first().scrollIntoViewIfNeeded();
   await page.locator('.citation.analogy').first().hover();
   await page.screenshot({path:'test-results/ui/04-shot-detail.png'});
+  await expect(page.locator('#player-frame')).toHaveAttribute('data-ready','1');
   await page.frameLocator('#player-frame').locator('body').evaluate(()=> (window as any).__player.seek(0));
   await expect(page.locator('.shot-card').first()).toHaveAttribute('aria-pressed','true');
  });
@@ -184,6 +199,7 @@ test.describe('真实后端操作流程',()=>{
   await expect(page.locator('.shot-card')).toHaveCount(shotlist.shots.length);
   await page.setViewportSize({width:1366,height:768});
   await compactFacts(page);
+  await expect(page.locator('#player-frame')).toHaveAttribute('data-ready','1');
   await page.frameLocator('#player-frame').locator('body').evaluate(()=> (window as any).__player.ready);
   await noHorizontalOverflow(page);
   await page.screenshot({path:'test-results/ui/05-narrow-1366.png'});
@@ -204,7 +220,70 @@ test.describe('纯逻辑校验',()=>{
   state.events[1].detail={progress:20}; progress=generationProgress(state);
   expect(progress.percent).toBe(20); expect(progress.progress).toBe('已完成 20%');
   state.events.push({run:'r2',stage:'compose',status:'start',summary:'合成中',detail:{}});
-  expect(generationProgress(state).label).toBe('合成');
+  expect(generationProgress(state).label).toBe('渲染');
+  state.run.stage='model';
+  expect(generationProgress(state).label).toBe('三维模型');
+  state.run.stage='';
+  expect(generationProgress(state).label).toBe('准备中');
+ });
+ test('仅将缺少回放录制的画面质检警告降为提示',()=>{
+  const warning={shot:'S1',severity:'warn',code:'VISUAL_QA',message:'自动画面质检未完成：缺少录制 visual_qa_test.json',hint:'人工复核'};
+  expect(displayIssue(warning)).toMatchObject({severity:'info',message:'回放模式未录制画面质检',hint:''});
+  expect(warning.severity).toBe('warn');
+  for(const issue of [{...warning,severity:'block'},{...warning,code:'OTHER'},{...warning,message:'画面遮挡'}]) expect(displayIssue(issue)).toEqual(issue);
+ });
+ test('调用汇总合并进度并按运行时间跨度统计，费用保留未知项',()=>{
+  const base={run:'r1',stage:'render',summary:'渲染',tool:'render.player'};
+  const events=[
+   {...base,ts:'2026-01-01T00:00:00Z',status:'start'},
+   {...base,ts:'2026-01-01T00:00:01Z',status:'start',detail:{progress:50}},
+   {...base,ts:'2026-01-01T00:00:01Z',status:'start',tool:'llm.opus.plan'},
+   {...base,ts:'2026-01-01T00:00:02Z',status:'ok'},
+   {...base,ts:'2026-01-01T00:00:03Z',status:'ok',tool:'llm.opus.plan'},
+  ];
+  const llm={calls:1,cost_usd:.12,unknown_cost_calls:1};
+  expect(toolSummary(events,llm)).toBe('大模型 1 次 · 程序工具 1 次 · 总耗时 3.0 秒 · 已知费用 $0.1200 · 1 次费用未知，未计入合计');
+  expect(toolSummary(events,llm,[{backend:'replay'}])).toContain('回放模式 · 不产生费用');
+  expect(toolSummary(events.slice(0,1),null,[],Date.parse('2026-01-01T00:00:04Z'))).toContain('总耗时 4.0 秒 · 费用待统计');
+  expect(toolSummary([],null)).toContain('大模型 0 次 · 程序工具 0 次 · 总耗时 0.0 秒');
+ });
+ test('预览等待时间线与播放器就绪，相同画面不因刷新或运行状态重建',async()=>{
+  // 最小 DOM 替身：在无浏览器环境验证异步加载及 iframe 身份。
+  const previous=Object.getOwnPropertyDescriptor(globalThis,'document');
+  let children:any[]=[], finishReady!:()=>void, unsubscribed=0;
+  const player={ready:new Promise<void>(resolve=>{finishReady=resolve;}),on:()=>()=>{unsubscribed++;}};
+  const node=()=>({id:'',innerHTML:'',hidden:false,isConnected:false,dataset:{} as any,contentWindow:{__player:player},listeners:{} as any,
+   addEventListener(name:string,fn:any){this.listeners[name]=fn;},
+   remove(){children=children.filter(child=>child!==this);this.isConnected=false;}});
+  const host={append(child:any){child.isConnected=true;children.push(child);},replaceChildren(...next:any[]){children.forEach(child=>{child.isConnected=false;});children=next;children.forEach(child=>{child.isConnected=true;});}};
+  const targets:any={'#preview':host,'#timeline':node(),'#shot-detail':node()};
+  Object.defineProperty(globalThis,'document',{configurable:true,value:{querySelector:(selector:string)=>targets[selector] || children.find(child=>`#${child.id}`===selector),createElement:node}});
+  try {
+   const state:any={pid:'p1',timelineLoaded:false,timeline:{shots:[{id:'S1'}],captions:[],audio:'a.wav'},run:{state:'done'},events:[]};
+   const studio=createStudio({state,isRunning:()=>state.run.state==='running'});
+   const frame=()=>children.find(child=>child.id==='player-frame');
+   studio.preview(); expect(frame()).toBeUndefined(); expect(children[0].innerHTML).toContain('正在加载时间线');
+   state.timelineLoaded=true; studio.preview(); const first=frame();
+   const loading=first.listeners.load();
+   expect(first.dataset.ready).toBeUndefined();
+   state.timeline.rendered_duration_s=4; state.report={generated_at:'完成'}; studio.preview();
+   expect(frame()).toBe(first);
+   finishReady(); await loading; expect(first.dataset.ready).toBe('1');
+   state.run={state:'running',stage:'model'}; studio.preview();
+   expect(frame()).toBe(first); expect(first.hidden).toBe(true);
+   expect(children.find(child=>child.id==='preview-status').innerHTML).toContain('正在生成：三维模型');
+   state.run.state='done'; studio.preview(); expect(frame()).toBe(first); expect(first.hidden).toBe(false);
+   for(const [key,value] of [['shots',[{id:'S2'}]],['captions',[{text:'新字幕'}]],['audio','b.wav']] as const) {
+    const old=frame(); state.timeline[key]=value; studio.preview(); expect(frame()).not.toBe(old); expect(old.isConnected).toBe(false);
+   }
+   expect(unsubscribed).toBe(1);
+   const old=frame(), staleLoad=old.listeners.load();
+   state.pid='p2'; studio.preview(); await staleLoad;
+   expect(frame()).not.toBe(old); expect(old.dataset.ready).toBeUndefined();
+   studio.reset(); expect(children).toHaveLength(0);
+  } finally {
+   if(previous) Object.defineProperty(globalThis,'document',previous); else Reflect.deleteProperty(globalThis,'document');
+  }
  });
  test('费用使用报告字段，只有完整回放记录显示免费',async()=>{
   const llm={calls:2,cost_usd:.1234,unknown_cost_calls:0};

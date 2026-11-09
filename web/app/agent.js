@@ -1,4 +1,4 @@
-import {$, esc, fileURL, mergeEvents, toast, readCallLogs, costSummary} from './common.js';
+import {$, esc, fileURL, mergeEvents, toast, readCallLogs, costSummary, toolSummary, displayIssue} from './common.js';
 export function createAgent(ctx) {
   let source, timer, delay=1000, generation=0, seen=new Set(), openCards=new Set();
   let costKey = '', callLogs = [];
@@ -7,7 +7,7 @@ export function createAgent(ctx) {
   function renderEvents() {
     const bottom=stream.scrollHeight-stream.scrollTop-stream.clientHeight<60;
     const calls=mergeEvents(ctx.state.events);
-    $('#tool-count').textContent=`已调用 ${calls.length} 次工具 · 其中大模型 ${calls.filter(e=>e.tool.startsWith('llm.')).length} 次`;
+    renderSummary();
     stream.innerHTML=calls.map((event,index)=>{
       const color=event.tool.startsWith('llm.')?'llm':event.tool.startsWith('model.')?'model':/^(verify|validate)/.test(event.tool)?'verify':'media';
       const status=event.status==='start'?'running':event.status;
@@ -17,7 +17,8 @@ export function createAgent(ctx) {
     }).join('') || '<p class="empty-note">准备好资料后，智能体将在这里展示每一步工具调用。</p>';
     updateTimes(); if(bottom) stream.scrollTo({top:stream.scrollHeight,behavior:'smooth'});
   }
-  function updateTimes() { stream.querySelectorAll('time').forEach(el=>{ const seconds=Math.max(0,Math.floor((Date.now()-Date.parse(el.dataset.ts))/1000)); el.textContent=seconds<5?'刚刚':seconds<60?`${seconds}秒前`:seconds<3600?`${Math.floor(seconds/60)}分钟前`:`${Math.floor(seconds/3600)}小时前`; }); }
+  function renderSummary() { $('#tool-count').textContent=toolSummary(ctx.state.events,ctx.state.report.llm,callLogs); }
+  function updateTimes() { renderSummary(); stream.querySelectorAll('time').forEach(el=>{ const seconds=Math.max(0,Math.floor((Date.now()-Date.parse(el.dataset.ts))/1000)); el.textContent=seconds<5?'刚刚':seconds<60?`${seconds}秒前`:seconds<3600?`${Math.floor(seconds/60)}分钟前`:`${Math.floor(seconds/3600)}小时前`; }); }
   function connect() {
     const token=++generation, pid=ctx.state.pid; seen=new Set(); openCards=new Set(); ctx.state.events=[]; renderEvents(); delay=1000;
     source?.close(); clearTimeout(timer); if(!pid) return;
@@ -42,7 +43,7 @@ export function createAgent(ctx) {
     }; open();
   }
   function render() {
-    const issues=ctx.state.issues;
+    const issues=ctx.state.issues.map(displayIssue);
     $('#issue-count').textContent=issues.length;
     const opened=new Set([...$('#issues').querySelectorAll('details[open]')].map(el=>el.dataset.severity));
     const hasPrevious=Boolean($('#issues details'));
@@ -60,6 +61,7 @@ export function createAgent(ctx) {
         callLogs = logs; render();
       }).catch(() => { /* 原始记录不可读时保留报告中的真实费用汇总。 */ });
     }
+    renderSummary();
     $('#outputs').innerHTML=`<div class="output-grid">${outputs.map(([path,label,exists])=>exists?`<a href="${fileURL(ctx.state.pid,path)}" target="_blank" rel="noopener"><span>↗</span><code>${label}</code></a>`:`<span class="output-pending"><code>${label}</code><small>待生成</small></span>`).join('')}</div>${llm?`<p class="muted">${esc(costSummary(llm, callLogs))}</p>`:''}`;
   }
   $('#issues').addEventListener('click',event=>{ const item=event.target.closest('[data-issue-shot]'); if(item?.dataset.issueShot) ctx.studio.select(item.dataset.issueShot,true); });
