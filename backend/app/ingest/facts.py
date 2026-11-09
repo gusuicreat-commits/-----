@@ -18,6 +18,7 @@ FACT_SCHEMA = {
 }
 SYSTEM = """你是起重机技术文档参数抽取员。只抽取文档中明确写出的数值参数。
 quote 必须从原文逐字复制，包含该数值，不超过40字；page 为所在页码。
+表格行的 quote 写成『项目名 数值 单位』，例如『额定起重量 1230 t』（原文中项目名与数值之间的换行/空格可省略，核验时会去除空白）。
 id 优先使用以下规范 id 与单位：
 F_rated_load(t)、F_girder_length(m)、F_overall_height(m)、F_span(m)、F_lift_height(m)、
 F_hoist_speed(m/min)、F_trolley_speed(m/min)、F_gantry_speed(m/min)、F_leg_height(m)、
