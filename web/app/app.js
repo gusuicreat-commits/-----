@@ -1,36 +1,38 @@
-import {$, esc, stages, pill, request, jsonOptions, busy, stored, persist, toast} from './common.js';
+import {$, esc, stages, stageLabel, fileURL, pill, request, jsonOptions, busy, stored, persist, toast} from './common.js';
 import {createResources} from './resources.js';
 import {createStudio} from './studio.js';
 import {createAgent} from './agent.js';
 
-const empty=()=>({pid:'',project:null,facts:[],assets:[],shotlist:{},timeline:{},issues:[],report:{},run:{},events:[]});
+const empty=()=>({pid:'',project:null,facts:[],assets:[],shotlist:{},timeline:{},timelineLoaded:false,issues:[],report:{},run:{},events:[]});
 const ctx={state:empty()};
 let revision=0, refreshTimer, pollBusy=false, runPending=false, lastPollError='';
 ctx.isRunning=()=>ctx.state.run.state==='running' || runPending;
 ctx.api=(path,options={},optional=false)=>request(`/api/projects/${encodeURIComponent(ctx.state.pid)}${path}`,options,optional);
 ctx.markEdited=()=>{ $('#rerun-stage').value='validate'; toast('已保存，请从真实性校验重跑以更新成片与报告'); };
-ctx.refresh=async(forcePlayer=false)=>{
+ctx.refresh=async()=>{
   const pid=ctx.state.pid, token=++revision; if(!pid) return;
   const keys=['project','facts','assets','shotlist','issues','timeline','report','run'];
   const paths=['','/facts','/assets','/shotlist','/issues','/timeline','/report','/run'];
   const responses=await Promise.all(paths.map(path=>request(`/api/projects/${encodeURIComponent(pid)}${path}`,{},path==='/shotlist')));
   if(pid!==ctx.state.pid || token!==revision) return;
   keys.forEach((key,index)=>{ const value=responses[index] || {}; ctx.state[key]=['facts','assets','issues'].includes(key)?value[key] || []:value; });
-  render(forcePlayer);
+  ctx.state.timelineLoaded=true;
+  render();
 };
 ctx.onEvent=event=>{
   renderRun();
   if(event.status!=='start') {
     clearTimeout(refreshTimer);
-    refreshTimer=setTimeout(()=>ctx.refresh(event.tool==='report.provenance' && event.status==='ok').catch(e=>toast(e.message)),150);
+    refreshTimer=setTimeout(()=>ctx.refresh().catch(e=>toast(e.message)),150);
   }
 };
 ctx.resources=createResources(ctx); ctx.studio=createStudio(ctx); ctx.agent=createAgent(ctx);
 $('#rerun-stage').innerHTML=stages.map(([id,label])=>`<option value="${id}">从${label}重跑</option>`).join('');
 function renderRun() {
   const state=ctx.state, run=state.run, running=run.state==='running' || runPending;
-  const label=stages.find(([id])=>id===run.stage)?.[1] || '准备中';
+  const label=stageLabel(run.stage);
   $('#generate').disabled=!state.pid || running; $('#generate').textContent=running?`${label}…`:'▶ 生成视频';
+  $('#open-film').disabled=!state.pid || running || !(run.state==='done' || state.report.generated_at);
   $('#rerun').disabled=!state.pid || running; $('#rerun-stage').disabled=running;
   $('#project-select').disabled=runPending;
   $('#run-status').outerHTML=`<span id="run-status" class="pill ${esc(run.state || 'pending')}" role="status">${running?`${label} · 运行中`:({paused:'等待人工复核',done:'已完成',error:'运行失败'})[run.state] || (state.pid?'资料就绪':'等待资料')}</span>`;
@@ -47,7 +49,7 @@ function renderRun() {
   }).join('');
   ctx.studio.preview();
 }
-function render(forcePlayer=false) { renderRun(); ctx.resources.render(); ctx.studio.render(forcePlayer); ctx.agent.render(); }
+function render() { renderRun(); ctx.resources.render(); ctx.studio.render(); ctx.agent.render(); }
 async function loadProjects(selected) {
   const projects=await request('/api/projects');
   $('#project-select').innerHTML='<option value="">选择项目</option>'+projects.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
@@ -65,6 +67,7 @@ async function run(fromStage,force=false) {
   try { await ctx.api('/run',jsonOptions('POST',{...(fromStage?{from_stage:fromStage}:{}),force})); await ctx.refresh(); }
   finally { runPending=false; renderRun(); }
 }
+$('#open-film').addEventListener('click',()=>window.open(fileURL(ctx.state.pid,'renders/final.mp4'),'_blank','noopener'));
 $('#generate').addEventListener('click',()=>run().catch(e=>toast(e.message)));
 $('#rerun').addEventListener('click',()=>run($('#rerun-stage').value).catch(e=>toast(e.message)));
 $('#project-select').addEventListener('change',event=>selectProject(event.target.value).catch(e=>toast(e.message)));
@@ -89,8 +92,7 @@ setInterval(async()=>{
   try {
     const runState=await ctx.api('/run'); if(pid!==ctx.state.pid) return;
     if(JSON.stringify(runState)!==JSON.stringify(ctx.state.run)) {
-      const finished=runState.state==='done' && ctx.state.run.state!=='done';
-      ctx.state.run=runState; await ctx.refresh(finished);
+      ctx.state.run=runState; await ctx.refresh();
     }
     lastPollError='';
   } catch(error) { if(lastPollError!==error.message) { toast(error.message); lastPollError=error.message; } }

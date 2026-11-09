@@ -1,4 +1,4 @@
-import {$, esc, kinds, pill, fileURL, jsonOptions, busy, toast, generationProgress} from './common.js';
+import {$, esc, kinds, pill, fileURL, jsonOptions, busy, toast, generationProgress, displayIssue} from './common.js';
 const units = {m:'米',t:'吨',mm:'毫米','m/min':'米/分钟'};
 export function narrationHTML(text, facts, analogies) {
   return String(text || '').split(/(\{\{[FA]_[a-zA-Z0-9_]+\}\})/g).map(part => {
@@ -18,14 +18,14 @@ export function createStudio(ctx) {
     $('#shot-count').textContent = shots.length ? `· ${shots.length} 个镜头` : '';
     $('#timeline').innerHTML = shots.map((shot,index) => {
       const timed = ctx.state.timeline.shots?.find(s => s.id === shot.id), duration = timed ? timed.end-timed.start : shot.duration_s || 0;
-      const issues = ctx.state.issues.filter(i => i.shot === shot.id), blocks = issues.filter(i => i.severity === 'block').length, warns = issues.filter(i => i.severity === 'warn').length;
+      const issues = ctx.state.issues.map(displayIssue).filter(i => i.shot === shot.id), blocks = issues.filter(i => i.severity === 'block').length, warns = issues.filter(i => i.severity === 'warn').length;
       return `<button class="shot-card source-${esc(shot.source)} ${shot.id === selected ? 'selected' : ''}" data-shot="${esc(shot.id)}" aria-pressed="${shot.id === selected}" style="flex-basis:${Math.max(72,duration*15)}px;flex-grow:${Math.max(0,duration)}"><span class="shot-number">${String(index+1).padStart(2,'0')}<span class="review-dot ${esc(shot.review?.status || 'pending')}" aria-label="${shot.review?.status === 'approved' ? '已通过' : '待复核'}"></span></span><strong>${esc(kinds[shot.kind] || shot.kind)}</strong><span class="shot-duration">${duration.toFixed(1)} 秒</span><span class="issue-badges">${blocks ? `<b class="block">${blocks}</b>` : ''}${warns ? `<b class="warn">${warns}</b>` : ''}</span></button>`;
     }).join('') || '<p class="empty-note">生成分镜后，可逐镜头查看台词、出处与复核状态。</p>';
   }
   function detail() {
     const shot = getShots().find(s => s.id === selected);
     if (!shot) { $('#shot-detail').innerHTML='<div class="detail-empty">选择一个镜头，查看它的资料依据与复核记录。</div>'; return; }
-    const analogies = ctx.state.shotlist.analogies || [], issues = ctx.state.issues.filter(i => i.shot === shot.id);
+    const analogies = ctx.state.shotlist.analogies || [], issues = ctx.state.issues.map(displayIssue).filter(i => i.shot === shot.id);
     const usedAnalogies = analogies.filter(a => (shot.analogy_refs || []).includes(a.id) || shot.params?.analogy === a.id || shot.narration?.includes(`{{${a.id}}}`));
     const calculations = usedAnalogies.map(a => `<div class="analogy-calculation"><strong>类比算式</strong><p>${esc(a.formula || '算式待补充')}</p><small>${esc(a.basis || '参照依据待补充')}</small></div>`).join('');
     const asset = ctx.state.assets.find(a => a.id === shot.params?.asset);
@@ -42,19 +42,35 @@ export function createStudio(ctx) {
       Promise.resolve().then(() => player.seek(shot.start)).catch(() => toast('播放器跳转失败，请检查时间线'));
     }
   }
-  function preview(force) {
+  function preview() {
     const running = ctx.isRunning(), progress = running ? generationProgress(ctx.state) : null;
-    const exists = ctx.state.timeline.shots?.length, key = `${ctx.state.pid}:${running ? JSON.stringify(progress) : exists ? JSON.stringify(ctx.state.timeline) : 'empty'}`;
-    if (!force && key === previewKey) return;
-    previewKey = key; unsubscribe(); unsubscribe = () => {}; readyPlayer = null;
+    const host = $('#preview');
+    const placeholder = html => {
+      let status = $('#preview-status');
+      if (!status) { status = document.createElement('div'); status.id = 'preview-status'; host.append(status); }
+      if (status.innerHTML !== html) status.innerHTML = html;
+      const frame = $('#player-frame'); if (frame) frame.hidden = true;
+    };
+    if (ctx.state.pid && !ctx.state.timelineLoaded) {
+      placeholder('<div class="preview-empty" role="status">正在加载时间线…</div>');
+      return;
+    }
+    const exists = ctx.state.timeline.shots?.length;
     if (running) {
-      $('#preview').innerHTML = `<div class="preview-empty preview-running" role="status"><span class="eyebrow">智能体正在生成视频</span><h2>正在生成：${esc(progress.label)}</h2><progress max="100" ${progress.percent != null ? `value="${progress.percent}"` : ''} aria-label="当前阶段进度"></progress><p>${esc(progress.progress)}</p><p class="generation-summary">${esc(progress.summary)}</p><ul class="completed-stages" aria-label="已完成阶段">${progress.completed.map(([,label]) => `<li>✓ ${esc(label)}</li>`).join('')}</ul></div>`;
+      placeholder(`<div class="preview-empty preview-running" role="status"><span class="eyebrow">智能体正在生成视频</span><h2>正在生成：${esc(progress.label)}</h2><progress max="100" ${progress.percent != null ? `value="${progress.percent}"` : ''} aria-label="当前阶段进度"></progress><p>${esc(progress.progress)}</p><p class="generation-summary">${esc(progress.summary)}</p><ul class="completed-stages" aria-label="已完成阶段">${progress.completed.map(([,label]) => `<li>✓ ${esc(label)}</li>`).join('')}</ul></div>`);
       return;
     }
     if (!exists) {
-      $('#preview').innerHTML = '<div class="preview-empty"><div class="crane-symbol" aria-hidden="true"><i></i><i></i><i></i><i></i></div><span class="eyebrow">从真实资料，到可信画面</span><h2>让重器的每一处细节，有据可循</h2><p>上传资料 <span>→</span> 生成视频 <span>→</span> 人工复核</p><button class="primary" data-action="seed">载入示例项目</button></div>';
+      if ($('#player-frame')) { unsubscribe(); unsubscribe = () => {}; readyPlayer = null; previewKey = ''; host.replaceChildren(); }
+      placeholder('<div class="preview-empty"><div class="crane-symbol" aria-hidden="true"><i></i><i></i><i></i><i></i></div><span class="eyebrow">从真实资料，到可信画面</span><h2>让重器的每一处细节，有据可循</h2><p>上传资料 <span>→</span> 生成视频 <span>→</span> 人工复核</p><button class="primary" data-action="seed">载入示例项目</button></div>');
       return;
     }
+    $('#preview-status')?.remove();
+    const {shots, captions, audio} = ctx.state.timeline;
+    const key = JSON.stringify([ctx.state.pid, shots, captions, audio]);
+    const existing = $('#player-frame');
+    if (existing && key === previewKey) { existing.hidden = false; return; }
+    previewKey = key; unsubscribe(); unsubscribe = () => {}; readyPlayer = null;
     const iframe = document.createElement('iframe'); iframe.id='player-frame'; iframe.title='成片预览播放器'; iframe.allow='autoplay';
     iframe.src=`/player/index.html?timeline=${encodeURIComponent(fileURL(ctx.state.pid,'timeline.json'))}&mode=preview&v=${Date.now()}`;
     iframe.addEventListener('load',async () => {
@@ -62,6 +78,7 @@ export function createStudio(ctx) {
         const player = iframe.contentWindow.__player; if (!player) throw new Error();
         await player.ready; if (!iframe.isConnected) return;
         readyPlayer = player;
+        iframe.dataset.ready = '1';
         unsubscribe = player.on?.('shot',shot => {
           if (shot.id !== selected && !editing && !$('#shot-detail').contains(document.activeElement)) select(shot.id);
           document.querySelectorAll('.shot-card').forEach(card => card.classList.toggle('playing',card.dataset.shot===shot.id));
@@ -70,8 +87,8 @@ export function createStudio(ctx) {
     });
     $('#preview').replaceChildren(iframe);
   }
-  function render(forcePlayer = false) {
-    preview(forcePlayer);
+  function render() {
+    preview();
     const ready = ctx.state.run.state === 'done' || Boolean(ctx.state.report.generated_at);
     $('#film-links').innerHTML = ready ? `<a class="button primary" href="${fileURL(ctx.state.pid,'renders/final.mp4')}" download>↓ 下载成片</a><a class="button" target="_blank" rel="noopener" href="${fileURL(ctx.state.pid,'report.html')}">查看溯源报告 ↗</a>` : '';
     const next = JSON.stringify([ctx.state.pid, ctx.state.shotlist, ctx.state.timeline, ctx.state.issues, ctx.state.facts]);
@@ -92,5 +109,5 @@ export function createStudio(ctx) {
       editing=false; ctx.markEdited(); await ctx.refresh(); if(selected===sid) detail();
     });
   });
-  return {render,preview,select,reset(){ selected=null; signature=''; editing=false; previewKey=''; readyPlayer=null; }};
+  return {render,preview,select,reset(){ unsubscribe(); unsubscribe=()=>{}; $('#preview').replaceChildren(); selected=null; signature=''; editing=false; previewKey=''; readyPlayer=null; }};
 }
