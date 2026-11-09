@@ -1,0 +1,3 @@
+import {orbit,ease,labelNodes} from './common.js';
+export {setup} from './common.js';
+export function render(ctx,shot,t,dur){const p=shot.params,amount=ease(Math.min(t/dur*3,(1-t/dur)*3))* (p.spread_m??12);for(const id of p.parts||[]){const n=ctx.model.getObjectByName(id);if(!n)continue;const dir=({girder:[0,1,0],leg_left:[-1,0,0],leg_right:[1,0,0],trolley:[0,1.8,0],cab:[0,0,1],hoist_hook:[0,-1,0]})[id]||[0,1,0];n.position.x+=dir[0]*amount;n.position.y+=dir[1]*amount;n.position.z+=dir[2]*amount;}orbit(ctx,13,14,1.5);ctx.content.innerHTML='<div class="section-title"><small>结构分解 / 示意</small>从整体，读懂协同</div>';labelNodes(ctx,p.parts||[]);}
