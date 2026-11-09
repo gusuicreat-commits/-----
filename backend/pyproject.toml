@@ -1,0 +1,25 @@
+[project]
+name = "kepu-agent"
+version = "0.1.0"
+description = "基于真实工业资料约束的起重机科普视频智能体"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn>=0.30",
+  "python-multipart>=0.0.9",
+  "pydantic>=2.7",
+  "pymupdf>=1.24",
+  "numpy>=1.26",
+  "trimesh>=4.4",
+  "cascadio>=0.1.1",
+  "edge-tts>=7.0",
+  "anthropic>=0.70",
+  "httpx>=0.27",
+]
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

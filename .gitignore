@@ -1,0 +1,11 @@
+projects/
+!projects/.keep
+.venv/
+__pycache__/
+*.pyc
+node_modules/
+web/test-results/
+web/playwright-report/
+.pytest_cache/
+.DS_Store
+*.log
