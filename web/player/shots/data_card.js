@@ -1,0 +1,3 @@
+import {orbit,clamp,esc,source} from './common.js';
+export {setup} from './common.js';
+export function render(ctx,shot,t,dur){const target=ctx.center.clone();target.x-=27;orbit(ctx,-8+t/dur*10,16,1.48,target);ctx.content.innerHTML=`<div class="data-panel"><h2>关键参数</h2>${(shot.params.facts||[]).map((id,i)=>{const f=ctx.timeline.facts[id];return f?`<div class="data-card" style="opacity:${clamp((t-i*.3)/.45)};transform:translateY(${(1-clamp((t-i*.3)/.45))*15}px)"><div class="name">${esc(f.name)}</div><div><span class="value">${esc(f.value)}</span><span class="unit">${esc(f.unit)}</span></div><div class="source">${source(f)}</div></div>`:'';}).join('')}</div>`;}
