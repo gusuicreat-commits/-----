@@ -1,0 +1,135 @@
+{
+ "task": "plan",
+ "note": "人工编写的示例项目离线录制，仅供测试，未调用真实大模型",
+ "response": {
+  "title": "大块头，也有细功夫",
+  "shots": [
+   {
+    "id": "临时编号",
+    "kind": "title",
+    "source": "graphic",
+    "duration_s": 4,
+    "narration": "这个大块头，究竟怎样把重物稳稳托起？",
+    "fact_refs": [],
+    "asset_refs": [],
+    "analogy_requests": [],
+    "params": {
+     "title": "大块头，也有细功夫"
+    }
+   },
+   {
+    "id": "临时编号",
+    "kind": "analogy",
+    "source": "graphic",
+    "duration_s": 8,
+    "narration": "主梁长{{F_girder_length}}，{{A_girder_length_football_field}}。",
+    "fact_refs": [
+     "F_girder_length"
+    ],
+    "asset_refs": [],
+    "analogy_requests": [
+     {
+      "fact": "F_girder_length",
+      "ref": "football_field",
+      "axis": "length"
+     }
+    ],
+    "params": {}
+   },
+   {
+    "id": "临时编号",
+    "kind": "model_orbit",
+    "source": "graphic",
+    "duration_s": 6,
+    "narration": "主梁和支腿搭起骨架，小车沿主梁移动。",
+    "fact_refs": [],
+    "asset_refs": [],
+    "analogy_requests": [],
+    "params": {
+     "from_deg": -30,
+     "caption": "应被过滤"
+    }
+   },
+   {
+    "id": "临时编号",
+    "kind": "motion",
+    "source": "graphic",
+    "duration_s": 6,
+    "narration": "小车运行速度最高{{F_trolley_speed}}，沿主梁平稳移动。",
+    "fact_refs": [
+     "F_trolley_speed"
+    ],
+    "asset_refs": [],
+    "analogy_requests": [],
+    "params": {
+     "axis": "trolley",
+     "from_m": -30,
+     "to_m": 30
+    }
+   },
+   {
+    "id": "临时编号",
+    "kind": "weld_macro",
+    "source": "graphic",
+    "duration_s": 8,
+    "narration": "焊缝错边量不大于{{F_weld_tolerance}}，{{A_weld_tolerance_hair}}。",
+    "fact_refs": [
+     "F_weld_tolerance"
+    ],
+    "asset_refs": [],
+    "analogy_requests": [
+     {
+      "fact": "F_weld_tolerance",
+      "ref": "hair",
+      "axis": "thickness"
+     }
+    ],
+    "params": {}
+   },
+   {
+    "id": "临时编号",
+    "kind": "real_media",
+    "source": "graphic",
+    "duration_s": 5,
+    "narration": "像这样的造船门机，服务于船体分段吊装。",
+    "fact_refs": [],
+    "asset_refs": [
+     "IMG_ODENSE"
+    ],
+    "analogy_requests": [],
+    "params": {
+     "asset": "IMG_ODENSE",
+     "caption": "参考实拍 · 非本机"
+    }
+   },
+   {
+    "id": "临时编号",
+    "kind": "ai_broll",
+    "source": "graphic",
+    "duration_s": 3,
+    "narration": "晨光中，船厂渐渐苏醒。",
+    "fact_refs": [],
+    "asset_refs": [],
+    "analogy_requests": [],
+    "params": {
+     "recipe": "sunrise_port",
+     "palette": "warm",
+     "prompt": "金色晨光照亮海面，水波轻轻流动"
+    }
+   },
+   {
+    "id": "临时编号",
+    "kind": "outro",
+    "source": "graphic",
+    "duration_s": 5,
+    "narration": "托起重物，靠的不只是大块头，还有细功夫。",
+    "fact_refs": [],
+    "asset_refs": [],
+    "analogy_requests": [],
+    "params": {
+     "title": "大与精，缺一不可"
+    }
+   }
+  ]
+ }
+}

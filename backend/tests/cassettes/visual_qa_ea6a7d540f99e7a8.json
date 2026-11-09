@@ -1,0 +1,60 @@
+{
+ "task": "visual_qa",
+ "note": "人工编写的离线质检录制，仅验证批处理与问题留存，未调用真实大模型",
+ "response": {
+  "shots": [
+   {
+    "id": "S0",
+    "ok": false,
+    "problems": [
+     "创意画面出现起重机"
+    ]
+   },
+   {
+    "id": "S1",
+    "ok": true,
+    "problems": []
+   },
+   {
+    "id": "S2",
+    "ok": true,
+    "problems": []
+   },
+   {
+    "id": "S3",
+    "ok": true,
+    "problems": []
+   },
+   {
+    "id": "S4",
+    "ok": true,
+    "problems": []
+   },
+   {
+    "id": "S5",
+    "ok": true,
+    "problems": []
+   },
+   {
+    "id": "S6",
+    "ok": true,
+    "problems": []
+   },
+   {
+    "id": "S7",
+    "ok": true,
+    "problems": []
+   },
+   {
+    "id": "S8",
+    "ok": true,
+    "problems": []
+   },
+   {
+    "id": "S9",
+    "ok": true,
+    "problems": []
+   }
+  ]
+ }
+}
