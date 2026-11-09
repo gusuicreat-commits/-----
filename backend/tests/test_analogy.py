@@ -1,11 +1,12 @@
 import pytest
 
-from app.agent.analogy import compute
+from app.agent.analogy import REFS, compute, preview
 from app.agent.text import find_unsourced_numbers, format_value, resolve
 
 
 @pytest.mark.parametrize("ref,axis,value,unit,ratio,expected", [
     ("football_field", "length", 104, "m", .99, "差不多就是一个标准足球场那么长"),
+    ("boeing747", "length", 104, "m", 1.615, "相当于1.6个波音747的翼展"),
     ("boeing747", "length", 64.4, "m", 1, "差不多和波音747的翼展一样宽"),
     ("building_floor", "height", 51, "m", 17, "相当于17层楼那么高"),
     ("bus", "length", 104, "m", 8.667, "相当于8.7辆12米长的公交车"),
@@ -22,6 +23,9 @@ from app.agent.text import find_unsourced_numbers, format_value, resolve
 ])
 def test_compute(ref, axis, value, unit, ratio, expected):
     result = compute("A_test", {"id": "F_test", "value": value, "unit": unit}, ref, axis)
+    assert preview({"id": "F_test", "value": value, "unit": unit}, ref, axis) == expected
+    assert result["ref_size"] == REFS[ref]["size"]
+    assert result["ref_unit"] == REFS[ref]["unit"]
     assert result["ratio"] == ratio
     assert result["text"] == expected
     assert result["fact"] == "F_test" and result["id"] == "A_test"
@@ -31,9 +35,9 @@ def test_compute(ref, axis, value, unit, ratio, expected):
         if value in (104, 104000):
             assert result["formula"] == "104 ÷ 105 ≈ 0.99"
     if ref == "hair":
-        assert result["ref_size_m"] == .07
-    if ref == "car":
-        assert result["ref_size_m"] == 1.5
+        assert result["ref_size_m"] == pytest.approx(.00007)
+    if axis == "mass":
+        assert result["ref_size_m"] is None
 
 
 @pytest.mark.parametrize("ref,axis,unit,value", [

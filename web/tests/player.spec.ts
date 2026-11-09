@@ -18,7 +18,7 @@ test('预览可播放、暂停并拖动时间轴',async({page})=>{await page.got
 test('参照物、运动轴和创意配方分支均可定位',async({page})=>{
  const variants=structuredClone(fixture);variants.shots=[];variants.captions=[];variants.duration_s=60;
  const refs=[['football_field','length',105],['building_floor','height',3],['boeing747','length',64.4],['person','height',1.75],['bus','length',12]];
- for(const [i,[ref,axis,size]] of refs.entries()){const id=`A_${ref}`;variants.analogies[id]={id,ref,axis,ref_size_m:size,ratio:axis==='height'?51/Number(size):104/Number(size),fact:axis==='height'?'F_overall_height':'F_girder_length',text:'真实尺度对照'};variants.shots.push({id,kind:'analogy',source:'model',start:i*5,end:i*5+5,params:{analogy:id}});}
+ for(const [i,[ref,axis,size]] of refs.entries()){const id=`A_${ref}`;variants.analogies[id]={id,ref,axis,ref_size_m:size,ref_size:size,ref_unit:'m',ratio:axis==='height'?51/Number(size):104/Number(size),fact:axis==='height'?'F_overall_height':'F_girder_length',text:'真实尺度对照'};variants.shots.push({id,kind:'analogy',source:'model',start:i*5,end:i*5+5,params:{analogy:id}});}
  for(const [i,axis] of ['trolley','hoist','gantry'].entries())variants.shots.push({id:axis,kind:'motion',source:'model',start:25+i*5,end:30+i*5,params:{axis,from_m:axis==='hoist'?5:-20,to_m:axis==='hoist'?40:20,speedup:1}});
  for(const [i,recipe] of ['sunrise_port','night_factory','blueprint_grid','particles'].entries())variants.shots.push({id:recipe,kind:'ai_broll',source:'ai',start:40+i*5,end:45+i*5,params:{recipe,palette:i%2?'cool':'steel'}});
  await page.route('**/variants.json',route=>route.fulfill({json:variants}));await page.goto('/player/index.html?timeline=/fixtures/variants.json&mode=render');await page.waitForFunction(()=>!!window.__player);await page.evaluate(()=>window.__player.ready);
@@ -47,7 +47,7 @@ test('GLB节点层级和104×51×20米外包尺寸符合契约',async()=>{
 test('参照物实际几何尺寸与输入尺度一致',async()=>{
  const ctx=await geometryContext(),module=await import('../player/shots/analogy.js');
  for(const [ref,axis,refSize,dimension,expected] of [['football_field','length',105,'x',105],['building_floor','height',3,'y',51],['boeing747','length',64.4,'x',64.4],['person','height',1.75,'y',1.75],['bus','length',12,'x',12]] as const){
-  ctx.timeline.analogies[ref]={ref,axis,ref_size_m:refSize,ratio:axis==='height'?51/refSize:104/refSize};
+  ctx.timeline.analogies[ref]={ref,axis,ref_size_m:refSize,ref_size:refSize,ref_unit:'m',ratio:axis==='height'?51/refSize:104/refSize};
   module.setup(ctx,{id:ref,params:{analogy:ref}});const size=new ctx.THREE.Box3().setFromObject(ctx.groups.get(ref)).getSize(new ctx.THREE.Vector3());expect(size[dimension],ref).toBeCloseTo(expected,2);
  }
 });
@@ -66,17 +66,18 @@ function projectedBounds(ctx,bounds){
  const points=[];for(const x of [bounds.min.x,bounds.max.x])for(const y of [bounds.min.y,bounds.max.y])for(const z of [bounds.min.z,bounds.max.z])points.push(new ctx.THREE.Vector3(x,y,z).project(ctx.camera));
  return {left:Math.min(...points.map(p=>(p.x+1)/2)),right:Math.max(...points.map(p=>(p.x+1)/2)),top:Math.min(...points.map(p=>(1-p.y)/2)),bottom:Math.max(...points.map(p=>(1-p.y)/2))};
 }
-test('长度类比左端对齐、本体外留六米且双物体位于安全区',async()=>{
+test('长度类比左端对齐、轨道外留六米且双物体位于安全区',async()=>{
  const ctx=await geometryContext(),module=await import('../player/shots/analogy.js');
  const girder=new ctx.THREE.Box3().setFromObject(ctx.model.getObjectByName('girder')),crane=new ctx.THREE.Box3().setFromObject(ctx.model.getObjectByName('crane'));
+ const footprint=crane.clone();for(const name of ['rail_left','rail_right'])footprint.union(new ctx.THREE.Box3().setFromObject(ctx.model.getObjectByName(name)));
  for(const [ref,size] of [['football_field',105],['bus',12],['boeing747',64.4]] as const){
-  ctx.timeline.analogies[ref]={ref,axis:'length',ref_size_m:size,ratio:104/size,fact:'F_girder_length',text:'真实尺度对照'};
+  ctx.timeline.analogies[ref]={ref,axis:'length',ref_size_m:size,ref_size:size,ref_unit:'m',ratio:104/size,fact:'F_girder_length',text:'真实尺度对照'};
   const shot={id:ref,params:{analogy:ref}};module.setup(ctx,shot);
   for(const time of [0,1,2.5,4.9]){
    ctx.camera.updateProjectionMatrix();module.render(ctx,shot,time,5);
    const reference=new ctx.THREE.Box3().setFromObject(ctx.groups.get(ref).userData.ref);
    expect(Math.abs(reference.min.x-girder.min.x)).toBeLessThan(.5);
-   expect(crane.min.z-reference.max.z).toBeCloseTo(6,5);
+   expect(footprint.min.z-reference.max.z).toBeCloseTo(6,5);
    for(const bounds of [crane,reference]){const p=projectedBounds(ctx,bounds);expect(p.left).toBeGreaterThanOrEqual(.08);expect(p.right).toBeLessThanOrEqual(.92);expect(p.top).toBeGreaterThanOrEqual(.08);expect(p.bottom).toBeLessThanOrEqual(.92);}
    const p=projectedBounds(ctx,crane.clone().union(reference));
    expect(p.right-p.left).toBeGreaterThanOrEqual(.6);expect(p.right-p.left).toBeLessThanOrEqual(.75);
@@ -91,7 +92,7 @@ test('长度类比左端对齐、本体外留六米且双物体位于安全区',
 test('高度类比与支腿并排、同地面且标注双高度',async()=>{
  const ctx=await geometryContext(),module=await import('../player/shots/analogy.js'),crane=new ctx.THREE.Box3().setFromObject(ctx.model.getObjectByName('crane')),leg=new ctx.THREE.Box3().setFromObject(ctx.model.getObjectByName('leg_right'));
  for(const [ref,size] of [['building_floor',3],['person',1.75]] as const){
-  ctx.timeline.analogies[ref]={ref,axis:'height',ref_size_m:size,ratio:51/size,fact:'F_overall_height',text:'真实尺度对照'};
+  ctx.timeline.analogies[ref]={ref,axis:'height',ref_size_m:size,ref_size:size,ref_unit:'m',ratio:51/size,fact:'F_overall_height',text:'真实尺度对照'};
   const shot={id:ref,params:{analogy:ref}};module.setup(ctx,shot);module.render(ctx,shot,2.5,5);
   const reference=new ctx.THREE.Box3().setFromObject(ctx.groups.get(ref).userData.ref);
   expect(reference.min.y).toBeCloseTo(crane.min.y,5);expect(reference.min.x-leg.max.x).toBeCloseTo(6,5);
@@ -151,7 +152,7 @@ function projectedMeshArea(ctx,mesh){
 }
 test('飞机有可见实体投影、翼展沿x且与尺寸端点一致',async()=>{
  const ctx=await geometryContext(),module=await import('../player/shots/analogy.js');
- ctx.timeline.analogies.plane={ref:'boeing747',axis:'length',ref_size_m:64.4,ratio:104/64.4,fact:'F_girder_length',text:'真实尺度对照'};
+ ctx.timeline.analogies.plane={ref:'boeing747',axis:'length',ref_size_m:64.4,ref_size:64.4,ref_unit:'m',ratio:104/64.4,fact:'F_girder_length',text:'真实尺度对照'};
  const shot={id:'plane',params:{analogy:'plane'}};module.setup(ctx,shot);module.render(ctx,shot,2.5,5);
  const ref=ctx.groups.get('plane').userData.ref,areas:number[]=[];
  ref.traverse(n=>{if(n.isMesh)areas.push(projectedMeshArea(ctx,n));});
@@ -187,7 +188,7 @@ test('焊缝头发丝沿z轴躺倒、细长且并排宽度匹配尺寸线',async
 test('类比HTML标签清晰且高度标签在左右两侧不相交',async({page})=>{
  for(const ref of ['building_floor','person','football_field','boeing747','bus']){
   const data=structuredClone(fixture),height=['building_floor','person'].includes(ref),size={building_floor:3,person:1.75,football_field:105,boeing747:64.4,bus:12}[ref];
-  data.analogies.A_length={ref,axis:height?'height':'length',ref_size_m:size,ratio:(height?51:104)/size,fact:height?'F_overall_height':'F_girder_length',text:'真实尺度对照'};
+  data.analogies.A_length={ref,axis:height?'height':'length',ref_size_m:size,ref_size:size,ref_unit:'m',ratio:(height?51:104)/size,fact:height?'F_overall_height':'F_girder_length',text:'真实尺度对照'};
   await page.route('**/label-variant.json',route=>route.fulfill({json:data}));
   await page.goto('/player/index.html?timeline=/fixtures/label-variant.json&mode=render');await page.waitForFunction(()=>!!window.__player);await page.evaluate(()=>window.__player.ready);
   for(const t of [11,12.5,14.8]){
@@ -208,5 +209,82 @@ test('类比HTML标签清晰且高度标签在左右两侧不相交',async({page
    }
   }
   await page.unroute('**/label-variant.json');
+ }
+});
+
+test('类比尺寸新单位与旧数据默认值一致',async()=>{
+ const {referenceSize}=await import('../player/shots/analogy.js');
+ expect(referenceSize({ref:'hair',ref_size:.07,ref_unit:'mm',ref_size_m:.00007})).toEqual({size:.07,unit:'mm',meters:.00007});
+ expect(referenceSize({ref:'hair',ref_size_m:.07})).toEqual({size:.07,unit:'mm',meters:.00007});
+ expect(referenceSize({ref:'building_floor',ref_size_m:3})).toEqual({size:3,unit:'m',meters:3});
+ expect(referenceSize({ref:'building_floor',ref_size:3.5,ref_unit:'m',ref_size_m:3.5})).toEqual({size:3.5,unit:'m',meters:3.5});
+});
+test('楼房窗片与墙面分离且残余楼层窗片不相互交叠',async()=>{
+ const ctx=await geometryContext(),module=await import('../player/shots/analogy.js');
+ for(const ratio of [17,17.1]){
+  const id=`building-${ratio}`;ctx.timeline.analogies[id]={ref:'building_floor',axis:'height',ratio,ref_size:3,ref_unit:'m',ref_size_m:3};
+  module.setup(ctx,{id,params:{analogy:id}});
+  const ref=ctx.groups.get(id).userData.ref,wall=new ctx.THREE.Box3().setFromObject(ref.getObjectByName('building-wall'));
+  const windows=ref.children.filter(n=>n.name==='building-window').map(n=>new ctx.THREE.Box3().setFromObject(n));
+  expect(windows).toHaveLength(Math.ceil(ratio)*4);
+  for(const window of windows){expect(window.min.z-wall.max.z).toBeGreaterThan(.05);expect(window.min.y).toBeGreaterThan(wall.min.y);expect(window.max.y).toBeLessThan(wall.max.y);}
+  for(let i=0;i<windows.length;i++)for(let j=i+1;j<windows.length;j++)expect(windows[i].intersectsBox(windows[j])).toBe(false);
+ }
+});
+test('飞机在轨道外侧落地且机身沿z轴无交叉',async()=>{
+ const ctx=await geometryContext(),module=await import('../player/shots/analogy.js');
+ const a={ref:'boeing747',axis:'length',ref_size:64.4,ref_unit:'m',ref_size_m:64.4,ratio:104/64.4};
+ ctx.timeline.analogies.plane=a;module.setup(ctx,{id:'plane',params:{analogy:'plane'}});
+ const ref=ctx.groups.get('plane').userData.ref,bounds=new ctx.THREE.Box3().setFromObject(ref);
+ const crane=new ctx.THREE.Box3().setFromObject(ctx.model.getObjectByName('crane')),girder=new ctx.THREE.Box3().setFromObject(ctx.model.getObjectByName('girder'));
+ expect(bounds.min.x).toBeCloseTo(girder.min.x,5);expect(bounds.min.y).toBeCloseTo(crane.min.y,5);expect(bounds.max.z).toBeLessThan(crane.min.z);
+ for(const name of ['rail_left','rail_right'])expect(bounds.intersectsBox(new ctx.THREE.Box3().setFromObject(ctx.model.getObjectByName(name)))).toBe(false);
+ const axis=new ctx.THREE.Vector3(0,1,0).applyQuaternion(ref.getObjectByName('fuselage').quaternion);
+ expect(Math.abs(axis.z)).toBeCloseTo(1,8);
+ for(const wheel of ref.children.filter(n=>n.name==='landing-wheel'))expect(new ctx.THREE.Box3().setFromObject(wheel).min.y).toBeCloseTo(crane.min.y,5);
+});
+test('钢板错边等于参数且尺寸线端点对应表面高度差',async()=>{
+ const ctx=await geometryContext(),module=await import('../player/shots/weld_macro.js'),shot=fixture.shots.find(s=>s.kind==='weld_macro');
+ for(const millimeters of [.5,.2]){
+  ctx.timeline.facts[shot.params.fact].value=millimeters;
+  module.setup(ctx,shot);module.render(ctx,shot,2.5,5);
+  const {left,right,seam,weld,width}=ctx.groups.get(shot.id).userData;
+  const l=new ctx.THREE.Box3().setFromObject(left),r=new ctx.THREE.Box3().setFromObject(right),s=new ctx.THREE.Box3().setFromObject(seam);
+  expect(r.max.y-l.max.y).toBeCloseTo(millimeters/1000,8);expect(width).toBeCloseTo(millimeters/1000,8);
+  expect(s.min.x).toBeCloseTo(l.max.x,8);expect(s.max.x).toBeCloseTo(r.min.x,8);
+  const path=ctx.labels.innerHTML.match(/class="weld-step-dimension"><path d="M ([\d.-]+) ([\d.-]+) H [\d.-]+ M ([\d.-]+) ([\d.-]+)/)!;
+  const points=[new ctx.THREE.Vector3(l.max.x,l.max.y,l.max.z),new ctx.THREE.Vector3(r.min.x,r.max.y,r.max.z)].map(p=>p.project(ctx.camera));
+  expect(Number(path[2])).toBeCloseTo((1-points[0].y)*540,5);expect(Number(path[4])).toBeCloseTo((1-points[1].y)*540,5);
+  const p=projectedBounds(ctx,new ctx.THREE.Box3().setFromObject(weld));expect(p.top*1080).toBeGreaterThan(440);expect(p.bottom*1080).toBeLessThan(860);
+  expect(ctx.content.innerHTML).toContain('示意放大');
+ }
+});
+test('旧头发丝字段不再生成巨型圆柱',async()=>{
+ const ctx=await geometryContext(),module=await import('../player/shots/weld_macro.js'),shot=fixture.shots.find(s=>s.kind==='weld_macro');
+ const a=ctx.timeline.analogies[shot.params.analogy];delete a.ref_size;delete a.ref_unit;a.ref_size_m=.07;
+ module.setup(ctx,shot);module.render(ctx,shot,2.5,5);
+ expect(ctx.groups.get(shot.id).userData.diameter).toBeCloseTo(.00007,8);
+ expect(ctx.groups.get(shot.id).userData.hairs.children).toHaveLength(7);
+ expect(ctx.labels.innerHTML).toContain('头发丝直径 0.07 mm');
+});
+test('焊缝文字参数卡与模型及尺寸标签在双分辨率下互不重叠',async({page})=>{
+ const ctx=await geometryContext(),module=await import('../player/shots/weld_macro.js'),shot=fixture.shots.find(s=>s.kind==='weld_macro');module.setup(ctx,shot);
+ for(const viewport of [{width:1920,height:1080},{width:1366,height:768}]){
+  await page.setViewportSize(viewport);await ready(page);
+  for(const t of [41,42.5,44.8]){
+   await page.evaluate(t=>window.__player.seek(t),t);
+   const copy=await page.locator('.weld-copy').evaluate((el:HTMLElement)=>({offsetTop:el.offsetTop,offsetHeight:el.offsetHeight}));
+   (ctx.content as any).querySelector=()=>copy;module.render(ctx,shot,t-40,5);
+   const stage=(await page.locator('#stage').boundingBox())!,text=(await page.locator('.weld-copy').boundingBox())!;
+   for(const group of [ctx.groups.get(shot.id).userData.weld,ctx.groups.get(shot.id).userData.hairs]){
+    const p=projectedBounds(ctx,new ctx.THREE.Box3().setFromObject(group));
+    expect(rectanglesOverlap(text,{x:stage.x+p.left*stage.width,y:stage.y+p.top*stage.height,width:(p.right-p.left)*stage.width,height:(p.bottom-p.top)*stage.height})).toBe(false);
+   }
+   const card=await page.locator('#numbers').boundingBox();
+   for(const label of await page.locator('#labels text').all()){
+    const rect=(await label.boundingBox())!;expect(rectanglesOverlap(card!,rect)).toBe(false);expect(rectanglesOverlap(text,rect)).toBe(false);
+    expect(rect.y+rect.height).toBeLessThan(stage.y+stage.height*.82);
+   }
+  }
  }
 });

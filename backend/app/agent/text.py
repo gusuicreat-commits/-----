@@ -31,6 +31,24 @@ def resolve(narration: str, facts_by_id: dict[str, dict], analogies_by_id: dict[
     return PLACEHOLDER.sub(replace, narration)
 
 
+def find_duplicate_phrases(text: str) -> list[str]:
+    found = []
+    # 前瞻保留重叠匹配；单字叠词和纯标点不构成重复短语。
+    for match in re.finditer(r"(?=(.{2,6})\1)", text):
+        phrase = match[1]
+        if not any(char.isalnum() for char in phrase):
+            continue
+        if len(phrase) == 2 and phrase[0] == phrase[1]:
+            continue
+        found.append(phrase * 2)
+    for match in re.finditer(
+        r"那么高那么|那么宽粗细|那么宽那么|相当于相当于|差不多相当于差不多"
+        r"|(相当于|差不多|大约)[^，。！？；、\n]{0,8}?\1", text
+    ):
+        found.append(match[0])
+    return list(dict.fromkeys(found))
+
+
 def find_unsourced_numbers(text_without_placeholders: str) -> list[str]:
     text = text_without_placeholders
     # 掩去固定词语，保持原文偏移；计量表达「第一百米」不能被豁免。

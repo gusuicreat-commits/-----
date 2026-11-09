@@ -152,3 +152,33 @@ def test_edit_recomputes_analogies_after_fact_change(sample, monkeypatch):
     monkeypatch.setattr(llm, "complete_json", lambda *args, **kwargs: {"shots": [raw_shot("model_orbit", id="S3")]})
     result = repair(sample, "r1", [{"severity": "block", "shot": "S3"}])
     assert next(a for a in result["analogies"] if a["ref"] == "football_field")["ratio"] == 2
+
+
+def test_preview_table_matches_axes_and_available_facts(sample):
+    context = planner._context(sample)
+    context['facts'].append({'id': 'F_hidden', 'name': '高度', 'value': 51, 'unit': 'm', 'status': 'rejected'})
+    rows = json.loads(planner._prompt(context))['类比展开预览']
+    assert '{{A_overall_height_building_floor}} → 相当于17层楼那么高' in rows
+    assert '{{A_girder_length_boeing747}} → 相当于1.6个波音747的翼展' in rows
+    assert '{{A_weld_tolerance_hair}} → 大约只有7根头发丝并排那么宽' in rows
+    assert any('A_rated_load_car' in row for row in rows)
+    assert not any('A_hidden' in row or 'speed' in row for row in rows)
+    assert not any('A_overall_height_football' in row or 'A_girder_length_building' in row for row in rows)
+
+
+def test_replay_repairs_duplicate_with_preview(sample, monkeypatch):
+    plan(sample, 'r1')
+    saved = storage.read_json(sample, 'shotlist.json')
+    saved['shots'][4]['narration'] = '错边不超过{{F_weld_tolerance}}，大约{{A_weld_tolerance_hair}}。'
+    storage.write_json(sample, 'shotlist.json', saved)
+    issues = validate(sample, 'r1')
+    assert any(i['code'] == 'DUPLICATE_PHRASE' and i['severity'] == 'block' for i in issues['issues'])
+    complete = llm.complete_json
+    def inspect(task, system, user, schema, **kwargs):
+        assert task == 'repair'
+        assert '{{A_weld_tolerance_hair}} → 大约只有7根头发丝并排那么宽' in json.loads(user)['类比展开预览']
+        assert '不要在它前后重复' in system
+        return complete(task, system, user, schema, **kwargs)
+    monkeypatch.setattr(llm, 'complete_json', inspect)
+    repair(sample, 'r1', issues)
+    assert not [i for i in validate(sample, 'r1')['issues'] if i['severity'] == 'block']

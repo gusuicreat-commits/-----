@@ -26,7 +26,12 @@ with tempfile.TemporaryDirectory(prefix='request-context-', dir=test_root) as te
     orchestrator.prepare_model(pid, 'fixture')
     context = planner._context(pid)
     target = llm.cassette_path('plan', planner.PLANNER_SYSTEM.replace('{target_s}', '45'), planner._prompt(context), planner.PLAN_SCHEMA)
-    response = json.loads((config.ROOT / 'backend/tests/cassettes/plan_143d086f77995a49.json').read_text())
+    def recording(prefix):
+        candidates = [json.loads(p.read_text()) for p in sorted((config.ROOT / 'backend/tests/cassettes').glob(prefix + '_*.json'))]
+        if prefix == 'plan':
+            return next(c for c in candidates if len(c['response'].get('shots', [])) == 8 and '示例项目' in c.get('note', ''))
+        return next(c for c in candidates if c.get('plan_shot_count') == 8 and {s['id'] for s in c['response']['shots']} == set(selected))
+    response = recording('plan')
     response['note'] = '界面测试离线响应；请求索引根据本次示例资料计算，未调用真实模型'
     target.write_text(json.dumps(response, ensure_ascii=False), encoding='utf-8')
     shots = planner.plan(pid, 'fixture')
@@ -36,7 +41,7 @@ with tempfile.TemporaryDirectory(prefix='request-context-', dir=test_root) as te
         extra = dict(issues=blocks, instruction='修正所有阻断问题，保留原有叙事意图。', analogies=shots.get('analogies', []), shots=[s for s in shots['shots'] if s['id'] in selected])
         duration = sum(s['duration_s'] for s in shots['shots'])
         target = llm.cassette_path('repair', planner.PLANNER_SYSTEM.replace('{target_s}', f'{duration:g}'), planner._prompt(context, **extra), planner.REPAIR_SCHEMA)
-        source = json.loads((config.ROOT / 'backend/tests/cassettes/repair_c518e10bf9713dd7.json').read_text())
+        source = recording('repair')
         target.write_text(json.dumps(source, ensure_ascii=False), encoding='utf-8')
 `,pid,testRoot],{cwd:path.join(root,'backend'),env:process.env,timeout:30000});
 }
