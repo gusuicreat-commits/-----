@@ -1,0 +1,13 @@
+{
+ "task": "visual_qa",
+ "note": "人工编写的离线质检录制，仅验证批处理与问题留存，未调用真实大模型",
+ "response": {
+  "shots": [
+   {
+    "id": "S10",
+    "ok": true,
+    "problems": []
+   }
+  ]
+ }
+}

@@ -9,7 +9,7 @@ import shutil
 from pathlib import Path
 from typing import AsyncIterator, Literal
 
-from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
@@ -18,6 +18,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app import config, events, storage
 from app.ingest.facts import FactPatch, extract_facts, update_fact
 from app.llm import LLMError
+from app.agent import orchestrator, planner
 
 app = FastAPI(title="起重机科普视频智能体")
 logger = logging.getLogger(__name__)
@@ -212,6 +213,120 @@ def seed_demo() -> dict:
                        "credit": " / ".join([item["author"], item["license"], item["source"]]), "duration_s": None})
     storage.write_json(pid, "assets.json", {"assets": assets})
     return project
+
+
+
+class RunInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    from_stage: Literal["ingest", "model", "plan", "validate", "tts", "render", "compose", "qa", "report"] | None = None
+    force: bool = False
+
+
+class ReviewInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["pending", "approved", "changes"]
+    note: str = ""
+
+
+class ShotPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    narration: str | None = None
+    params: dict | None = None
+    review: ReviewInput | None = None
+
+
+class RevisionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    instruction: str = Field(min_length=1)
+
+
+@app.exception_handler(orchestrator.RunConflict)
+async def run_conflict_handler(request: object, exc: orchestrator.RunConflict) -> JSONResponse:
+    return JSONResponse({"error": str(exc)}, status_code=409)
+
+
+@app.post("/api/projects/{pid}/model/step")
+def upload_step(pid: str, file: UploadFile = File(...)) -> dict:
+    storage.project_dir(pid)
+    if Path(file.filename or "").suffix.lower() not in {".step", ".stp"}:
+        raise ValueError("仅支持上传 STEP 或 STP 模型")
+    path = save_upload(pid, "model", file)
+    return orchestrator.prepare_model(pid, next_run(pid), step_path=path)
+
+
+@app.post("/api/projects/{pid}/model/parametric")
+def create_parametric(pid: str) -> dict:
+    return orchestrator.prepare_model(pid, next_run(pid))
+
+
+def backend_url(request: Request) -> str:
+    configured = os.environ.get("KEPU_PORT")
+    port = int(configured) if configured else request.url.port or (443 if request.url.scheme == "https" else 80)
+    if not 1 <= port <= 65535:
+        raise ValueError("服务端口无效")
+    return f"http://127.0.0.1:{port}"
+
+
+@app.post("/api/projects/{pid}/run")
+def run_project(pid: str, body: RunInput, request: Request) -> dict:
+    return {"run": orchestrator.start_run(pid, from_stage=body.from_stage, force=body.force, base_url=backend_url(request))}
+
+
+@app.get("/api/projects/{pid}/run")
+def get_run(pid: str) -> dict:
+    return storage.read_json(pid, "run.json", {})
+
+
+@app.get("/api/projects/{pid}/shotlist")
+def get_shotlist(pid: str) -> dict:
+    data = storage.read_json(pid, "shotlist.json")
+    if data is None:
+        raise KeyError("尚未生成分镜")
+    return data
+
+
+@app.patch("/api/projects/{pid}/shots/{sid}")
+def patch_shot(pid: str, sid: str, body: ShotPatch) -> dict:
+    patch = body.model_dump(exclude_unset=True)
+    if any(value is None for value in patch.values()):
+        raise ValueError("镜头字段不能为 null")
+    with storage.LOCK:
+        data = storage.read_json(pid, "shotlist.json", {"shots": []})
+        for shot in data["shots"]:
+            if shot["id"] == sid:
+                if "params" in patch:
+                    patch["params"] = {**shot.get("params", {}), **patch["params"]}
+                if "narration" in patch or "params" in patch:
+                    shot.pop("narration_resolved", None)
+                    shot["review"] = {"status": "pending", "note": ""}
+                shot.update(patch)
+                storage.write_json(pid, "shotlist.json", data)
+                return shot
+    raise KeyError("镜头不存在")
+
+
+@app.post("/api/projects/{pid}/shots/{sid}/revise")
+def revise_shot(pid: str, sid: str, body: RevisionInput) -> dict:
+    data = storage.read_json(pid, "shotlist.json", {"shots": []})
+    if not any(shot["id"] == sid for shot in data["shots"]):
+        raise KeyError("镜头不存在")
+    result = planner.revise_shot(pid, next_run(pid), sid, body.instruction)
+    return next(shot for shot in result["shots"] if shot["id"] == sid)
+
+
+@app.get("/api/projects/{pid}/issues")
+def get_issues(pid: str) -> dict:
+    return storage.read_json(pid, "issues.json", {"issues": []})
+
+
+@app.get("/api/projects/{pid}/timeline")
+def get_timeline(pid: str) -> dict:
+    return storage.read_json(pid, "timeline.json", {})
+
+
+@app.get("/api/projects/{pid}/report")
+def get_report(pid: str) -> dict:
+    return storage.read_json(pid, "report.json", {})
 
 
 def static_file(root: Path, path: str, *, fallback: bool = False) -> FileResponse | HTMLResponse:
