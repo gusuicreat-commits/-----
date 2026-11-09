@@ -2,7 +2,6 @@
 from copy import deepcopy
 import json
 import math
-import os
 import subprocess
 
 from app import storage
@@ -62,13 +61,8 @@ def build_timeline(pid: str) -> dict:
     timeline = {key: shotlist.get(key, default) for key, default in (("fps", 30), ("width", 1920), ("height", 1080))}
     timeline.update(shots=[], captions=[], facts={}, analogies=analogies, assets=assets, model=model or None,
                     audio=f"/files/{pid}/renders/narration.wav", music=compose.select_music(pid))
-    max_s = float(os.environ.get("KEPU_RENDER_MAX_S", "inf"))
-    if max_s <= 0 or math.isnan(max_s):
-        raise ValueError("渲染截断时长必须大于零")
     position, tracks = 0.0, []
     for shot in shotlist["shots"]:
-        if position >= max_s:
-            break
         sid = shot["id"]
         audio = storage.safe_path(directory / "tts", f"{sid}.mp3")
         metadata = json.loads(audio.with_suffix(".words.json").read_text(encoding="utf-8"))
@@ -77,7 +71,7 @@ def build_timeline(pid: str) -> dict:
         duration = float(metadata["duration_s"])
         if not math.isfinite(duration) or duration <= 0:
             raise ValueError("配音时长无效")
-        end = min(max_s, position + max(float(shot["duration_s"]), duration + .8))
+        end = position + max(float(shot["duration_s"]), duration + .8)
         narration = resolve(shot["narration"], facts, analogies)
         params = deepcopy(shot.get("params", {}))
         overlays: list[str] = []

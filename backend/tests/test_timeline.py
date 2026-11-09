@@ -1,6 +1,14 @@
+import io
+import json
+from pathlib import Path
+import shutil
+import subprocess
+
 import pytest
 from app import storage
 from app.agent import timeline
+
+REAL_RUN = subprocess.run
 
 
 def setup_timeline(project, monkeypatch, kind="parametric"):
@@ -53,16 +61,79 @@ def test_timeline_duration_badges_and_facts(project, monkeypatch, model_kind, ba
     assert "atrim=duration=28.0" in filters and calls[0][-1].endswith("narration.wav")
 
 
-def test_timeline_truncates_audio_captions_and_shots(project, monkeypatch):
+def test_render_limit_preserves_full_preview(project, monkeypatch):
     pid, calls = setup_timeline(project, monkeypatch)
-    monkeypatch.setenv("KEPU_RENDER_MAX_S", "3")
+    monkeypatch.setenv("KEPU_RENDER_MAX_S", "4")
     result = timeline.build_timeline(pid)
-    assert result["duration_s"] == 3 and len(result["shots"]) == 1
-    assert result["shots"][0]["end"] == 3
-    assert all(c["end"] <= 3 for c in result["captions"])
-    assert "atrim=duration=3.0" in calls[0][calls[0].index("-filter_complex") + 1]
+    assert result["duration_s"] == 28 and len(result["shots"]) == 7
+    assert result["shots"][2]["start"] == 8
+    assert result["shots"][-1]["end"] == 28
+    assert len(result["captions"]) == 7
+    assert result["captions"][-1]["start"] == 24.35
+    assert "atrim=duration=28.0" in calls[0][calls[0].index("-filter_complex") + 1]
+    assert calls[0][calls[0].index("-t") + 1] == "28.0"
 
 
 def test_timeline_no_shots(project):
     with pytest.raises(ValueError, match="分镜"):
         timeline.build_timeline(project["id"])
+
+
+def test_full_preview_with_short_render_and_audio(project: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+        pytest.skip("缺少本机音视频工具")
+    pid, directory = project["id"], storage.project_dir(project["id"])
+    monkeypatch.setenv("KEPU_RENDER_MAX_S", "4")
+    monkeypatch.setenv("KEPU_TTS_ENGINE", "fake")
+    monkeypatch.setattr(timeline.compose, "select_music", lambda pid: None)
+
+    def local_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess:
+        assert Path(args[0]).name in {"ffmpeg", "ffprobe"}, "仅允许本机音视频工具"
+        return REAL_RUN(args, **kwargs)
+
+    class LocalFrames:
+        """用本地纯色帧替代浏览器，仅核验渲染命令和音视频裁剪。"""
+        def __init__(self, args: list[str], **kwargs: object) -> None:
+            assert args[args.index("--to") + 1] == "4.0"
+            local_run([timeline.tts.ffmpeg(), "-y", "-v", "error", "-f", "lavfi", "-i",
+                       "color=c=black:s=64x64:r=30", "-t", args[args.index("--to") + 1],
+                       "-c:v", "libx264", "-pix_fmt", "yuv420p", args[args.index("--out") + 1]],
+                      check=True, capture_output=True, timeout=60)
+            self.stdout = io.StringIO('{"frame":120,"total":120}\n')
+
+        def __enter__(self) -> "LocalFrames":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            pass
+
+        def wait(self) -> int:
+            return 0
+
+    monkeypatch.setattr(subprocess, "run", local_run)
+    shots = [{"id": f"S{i}", "kind": "title", "source": "graphic", "duration_s": 4,
+              "narration": "测试。", "params": {}} for i in range(1, 4)]
+    storage.write_json(pid, "shotlist.json", {"shots": shots})
+    for shot in shots:
+        timeline.tts.synthesize(shot["narration"], directory / "tts" / f"{shot['id']}.mp3")
+    result = timeline.build_timeline(pid)
+    assert len(result["shots"]) == len(result["captions"]) == 3
+    assert result["duration_s"] == 12
+    assert timeline.tts.probe_duration(directory / "renders/narration.wav") == pytest.approx(12, abs=.01)
+    # 不替换音视频工具内部使用的进程，仅替换渲染入口。
+    from types import SimpleNamespace
+    monkeypatch.setattr(timeline.compose, "subprocess", SimpleNamespace(
+        Popen=LocalFrames, PIPE=subprocess.PIPE, run=local_run))
+    video = timeline.compose.render_video(pid, "r1", base_url="http://127.0.0.1:8031")
+    final = timeline.compose.mux(pid, "r1")
+    for output in (video, final):
+        assert timeline.tts.probe_duration(output) == pytest.approx(4, abs=.08)
+    probe = local_run(["ffprobe", "-v", "error", "-show_streams", "-of", "json", str(final)],
+                      check=True, capture_output=True, text=True)
+    streams = json.loads(probe.stdout)["streams"]
+    assert {stream["codec_type"] for stream in streams} == {"audio", "video"}
+    for stream in streams:
+        assert float(stream["duration"]) == pytest.approx(4, abs=.08)
+    saved = storage.read_json(pid, "timeline.json")
+    assert saved["duration_s"] == 12 and saved["rendered_duration_s"] == pytest.approx(4, abs=.08)
+    assert saved["shots"][2]["start"] == 8
