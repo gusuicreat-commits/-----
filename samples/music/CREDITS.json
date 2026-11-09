@@ -1,0 +1,4 @@
+[
+ {"id":"BGM_INDUSTRIAL","file":"industrial_revolution.mp3","title":"Industrial Revolution","author":"Kevin MacLeod (incompetech.com)","license":"CC BY 4.0","license_url":"https://creativecommons.org/licenses/by/4.0/","source":"https://incompetech.com/music/royalty-free/mp3-royaltyfree/Industrial%20Revolution.mp3","default":true},
+ {"id":"BGM_INSPIRED","file":"inspired.mp3","title":"Inspired","author":"Kevin MacLeod (incompetech.com)","license":"CC BY 4.0","license_url":"https://creativecommons.org/licenses/by/4.0/","source":"https://incompetech.com/music/royalty-free/mp3-royaltyfree/Inspired.mp3","default":false}
+]
