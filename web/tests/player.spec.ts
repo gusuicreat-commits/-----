@@ -61,3 +61,152 @@ test('吊钩离地高度与钢丝绳顶部锚点一致',async()=>{
   expect(hook.y).toBeCloseTo(y,5);expect(rope.min.y).toBeCloseTo(y,5);expect(rope.max.y).toBeCloseTo(48,5);
  }}finally{if(saved===undefined)delete (globalThis as any).document;else (globalThis as any).document=saved;}
 });
+
+function projectedBounds(ctx,bounds){
+ const points=[];for(const x of [bounds.min.x,bounds.max.x])for(const y of [bounds.min.y,bounds.max.y])for(const z of [bounds.min.z,bounds.max.z])points.push(new ctx.THREE.Vector3(x,y,z).project(ctx.camera));
+ return {left:Math.min(...points.map(p=>(p.x+1)/2)),right:Math.max(...points.map(p=>(p.x+1)/2)),top:Math.min(...points.map(p=>(1-p.y)/2)),bottom:Math.max(...points.map(p=>(1-p.y)/2))};
+}
+test('长度类比左端对齐、本体外留六米且双物体位于安全区',async()=>{
+ const ctx=await geometryContext(),module=await import('../player/shots/analogy.js');
+ const girder=new ctx.THREE.Box3().setFromObject(ctx.model.getObjectByName('girder')),crane=new ctx.THREE.Box3().setFromObject(ctx.model.getObjectByName('crane'));
+ for(const [ref,size] of [['football_field',105],['bus',12],['boeing747',64.4]] as const){
+  ctx.timeline.analogies[ref]={ref,axis:'length',ref_size_m:size,ratio:104/size,fact:'F_girder_length',text:'真实尺度对照'};
+  const shot={id:ref,params:{analogy:ref}};module.setup(ctx,shot);
+  for(const time of [0,1,2.5,4.9]){
+   ctx.camera.updateProjectionMatrix();module.render(ctx,shot,time,5);
+   const reference=new ctx.THREE.Box3().setFromObject(ctx.groups.get(ref).userData.ref);
+   expect(Math.abs(reference.min.x-girder.min.x)).toBeLessThan(.5);
+   expect(crane.min.z-reference.max.z).toBeCloseTo(6,5);
+   for(const bounds of [crane,reference]){const p=projectedBounds(ctx,bounds);expect(p.left).toBeGreaterThanOrEqual(.08);expect(p.right).toBeLessThanOrEqual(.92);expect(p.top).toBeGreaterThanOrEqual(.08);expect(p.bottom).toBeLessThanOrEqual(.92);}
+   const p=projectedBounds(ctx,crane.clone().union(reference));
+   expect(p.right-p.left).toBeGreaterThanOrEqual(.6);expect(p.right-p.left).toBeLessThanOrEqual(.75);
+   const direction=ctx.camera.getWorldDirection(new ctx.THREE.Vector3());
+   const elevation=ctx.THREE.MathUtils.radToDeg(Math.asin(-direction.y));
+   expect(elevation).toBeGreaterThanOrEqual(30);expect(elevation).toBeLessThanOrEqual(40);expect(Math.abs(direction.x)).toBeGreaterThan(.1);
+   expect(ctx.content.innerHTML).toContain('主梁 104 m');expect(ctx.content.innerHTML).toContain(`参照 ${size} m`);
+   expect(ctx.labels.innerHTML).not.toContain('<text');
+  }
+ }
+});
+test('高度类比与支腿并排、同地面且标注双高度',async()=>{
+ const ctx=await geometryContext(),module=await import('../player/shots/analogy.js'),crane=new ctx.THREE.Box3().setFromObject(ctx.model.getObjectByName('crane')),leg=new ctx.THREE.Box3().setFromObject(ctx.model.getObjectByName('leg_right'));
+ for(const [ref,size] of [['building_floor',3],['person',1.75]] as const){
+  ctx.timeline.analogies[ref]={ref,axis:'height',ref_size_m:size,ratio:51/size,fact:'F_overall_height',text:'真实尺度对照'};
+  const shot={id:ref,params:{analogy:ref}};module.setup(ctx,shot);module.render(ctx,shot,2.5,5);
+  const reference=new ctx.THREE.Box3().setFromObject(ctx.groups.get(ref).userData.ref);
+  expect(reference.min.y).toBeCloseTo(crane.min.y,5);expect(reference.min.x-leg.max.x).toBeCloseTo(6,5);
+  expect((ctx.labels.innerHTML.match(/class="dimension"/g)||[]).length).toBe(2);
+  const p=projectedBounds(ctx,crane.clone().union(reference));
+  expect(p.bottom-p.top).toBeGreaterThanOrEqual(.55);expect(p.bottom-p.top).toBeLessThanOrEqual(.70);
+  expect(ctx.content.innerHTML).toContain('整机高度 51 m');
+  expect(ctx.content.innerHTML).toContain(ref==='building_floor'?'参照 17 层 × 3 m':'参照 1.75 m');
+ }
+});
+test('开场模型在右下区域并避开文字矩形',async()=>{
+ const ctx=await geometryContext(),module=await import('../player/shots/title.js');
+ for(const height of [260,360]){
+  (ctx.content as any).querySelector=()=>({offsetLeft:76,offsetWidth:720,offsetTop:140,offsetHeight:height});
+  for(const t of [0,2.5,4.9]){module.render(ctx,{params:{}},t,5);const p=projectedBounds(ctx,new ctx.THREE.Box3().setFromObject(ctx.model.getObjectByName('crane')));expect(p.left*1920).toBeGreaterThan(76+720+20);expect(p.right).toBeLessThanOrEqual(.96);expect(p.bottom).toBeLessThanOrEqual(.87);expect(p.right-p.left).toBeGreaterThanOrEqual(.45);expect(p.right-p.left).toBeLessThanOrEqual(.55);expect((p.top+p.bottom)/2).toBeGreaterThan(.5);expect(ctx.renderer.toneMappingExposure).toBe(1.15);}
+ }
+});
+test('开场双分辨率文字与模型投影不相交',async({page})=>{
+ const ctx=await geometryContext(),module=await import('../player/shots/title.js');
+ for(const viewport of [{width:1920,height:1080},{width:1366,height:768}]){
+  await page.setViewportSize(viewport);await ready(page);await page.evaluate(()=>window.__player.seek(3));
+  const layout=await page.locator('.opening').evaluate((el:HTMLElement)=>({top:el.offsetTop,height:el.offsetHeight}));
+  (ctx.content as any).querySelector=()=>({offsetTop:layout.top,offsetHeight:layout.height});module.render(ctx,fixture.shots[0],3,5);
+  const p=projectedBounds(ctx,new ctx.THREE.Box3().setFromObject(ctx.model.getObjectByName('crane'))),stage=await page.locator('#stage').boundingBox(),text=await page.locator('.opening').boundingBox();
+  const model={x:stage!.x+p.left*stage!.width,y:stage!.y+p.top*stage!.height,width:(p.right-p.left)*stage!.width,height:(p.bottom-p.top)*stage!.height};
+  expect(rectanglesOverlap(model,text!)).toBe(false);
+  expect(model.width/stage!.width).toBeGreaterThanOrEqual(.45);expect(model.width/stage!.width).toBeLessThanOrEqual(.55);
+  await expect(page.locator('.opening')).toHaveCSS('background-image',/linear-gradient/);
+ }
+});
+test('焊缝等比对照标签位于圆柱下方',async({page})=>{
+ const ctx=await geometryContext(),module=await import('../player/shots/weld_macro.js'),shot=fixture.shots.find(s=>s.kind==='weld_macro');
+ module.setup(ctx,shot);module.render(ctx,shot,2.5,5);
+ const p=projectedBounds(ctx,new ctx.THREE.Box3().setFromObject(ctx.groups.get(shot.id).userData.hairs));
+ await ready(page);await page.evaluate(()=>window.__player.seek(42.5));
+ const stage=await page.locator('#stage').boundingBox(),label=await page.locator('.hair-label').boundingBox();
+ expect(label!.y).toBeGreaterThan(stage!.y+p.bottom*stage!.height);
+ await expect(page.locator('.hair-label')).toHaveText('头发丝直径 0.07 mm');
+});
+test('创意粒子画布位于文字层下方',async({page})=>{
+ await ready(page);await page.evaluate(()=>window.__player.seek(37.5));
+ expect(await page.locator('#creative').evaluate(el=>Number(getComputedStyle(el).zIndex))).toBeLessThan(await page.locator('#content').evaluate(el=>Number(getComputedStyle(el).zIndex)));
+});
+
+function rectanglesOverlap(a,b){return a.x<b.x+b.width&&a.x+a.width>b.x&&a.y<b.y+b.height&&a.y+a.height>b.y;}
+function projectedMeshArea(ctx,mesh){
+ mesh.updateWorldMatrix(true,false);
+ const positions=mesh.geometry.attributes.position,index=mesh.geometry.index;
+ let area=0;
+ for(let i=0;i<(index?.count??positions.count);i+=3){
+  const points=[0,1,2].map(j=>new ctx.THREE.Vector3().fromBufferAttribute(positions,index?index.getX(i+j):i+j).applyMatrix4(mesh.matrixWorld).project(ctx.camera));
+  const [a,b,c]=points;
+  // 只累计朝向相机的三角形，返回占画布面积比例。
+  area+=Math.max(0,(b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x))/8;
+ }
+ return area;
+}
+test('飞机有可见实体投影、翼展沿x且与尺寸端点一致',async()=>{
+ const ctx=await geometryContext(),module=await import('../player/shots/analogy.js');
+ ctx.timeline.analogies.plane={ref:'boeing747',axis:'length',ref_size_m:64.4,ratio:104/64.4,fact:'F_girder_length',text:'真实尺度对照'};
+ const shot={id:'plane',params:{analogy:'plane'}};module.setup(ctx,shot);module.render(ctx,shot,2.5,5);
+ const ref=ctx.groups.get('plane').userData.ref,areas:number[]=[];
+ ref.traverse(n=>{if(n.isMesh)areas.push(projectedMeshArea(ctx,n));});
+ expect(Math.max(...areas)).toBeGreaterThan(.005);
+ const bounds=new ctx.THREE.Box3().setFromObject(ref),wings=new ctx.THREE.Box3().setFromObject(ref.getObjectByName('wings'));
+ expect(wings.min.x).toBeCloseTo(bounds.min.x,5);expect(wings.max.x).toBeCloseTo(bounds.max.x,5);
+ expect(wings.max.x-wings.min.x).toBeCloseTo(64.4,3);
+ expect(ref.getObjectByName('wings').material.color.getHexString()).toBe('d6dee4');
+ expect(ref.getObjectByName('wings').children.some(n=>n.isLineSegments)).toBe(true);
+ const path=[...ctx.labels.innerHTML.matchAll(/<path d="M ([\d.-]+) ([\d.-]+) L ([\d.-]+) ([\d.-]+)/g)][1];
+ const tips=[-32.2,32.2].map(x=>ref.localToWorld(new ctx.THREE.Vector3(x,6,15)).project(ctx.camera));
+ expect(Number(path[1])).toBeCloseTo((tips[0].x+1)*960,4);expect(Number(path[3])).toBeCloseTo((tips[1].x+1)*960,4);
+});
+test('焊缝头发丝沿z轴躺倒、细长且并排宽度匹配尺寸线',async()=>{
+ const ctx=await geometryContext(),module=await import('../player/shots/weld_macro.js'),shot=fixture.shots.find(s=>s.kind==='weld_macro');
+ module.setup(ctx,shot);module.render(ctx,shot,2.5,5);
+ const {hairs,width,diameter}=ctx.groups.get(shot.id).userData;
+ expect(hairs.children).toHaveLength(7);
+ for(const hair of hairs.children){
+  const p=hair.geometry.parameters;
+  expect(p.height/(p.radiusTop*2)).toBeGreaterThanOrEqual(12);
+  const axis=new ctx.THREE.Vector3(0,1,0).applyQuaternion(hair.quaternion);
+  expect(Math.abs(axis.z)).toBeCloseTo(1,8);expect(axis.y).toBeCloseTo(0,8);
+  expect(hair.material.color.getHexString()).toBe('382319');expect(hair.material.roughness).toBeLessThan(.3);
+ }
+ const row=new ctx.THREE.Box3().setFromObject(hairs),p=projectedBounds(ctx,row);
+ expect(width).toBeCloseTo(.0005,8);expect(diameter).toBeCloseTo(.00007,8);
+ expect((p.right-p.left)*1920).toBeCloseTo(440,4);
+ const match=ctx.labels.innerHTML.match(/class="hair-dimension" d="M ([\d.]+) ([\d.]+) v 24 M ([\d.]+)/)!;
+ expect(Number(match[3])-Number(match[1])).toBeCloseTo(440,4);
+ expect(Number(match[2])).toBeGreaterThan(p.bottom*1080);
+});
+test('类比HTML标签清晰且高度标签在左右两侧不相交',async({page})=>{
+ for(const ref of ['building_floor','person','football_field','boeing747','bus']){
+  const data=structuredClone(fixture),height=['building_floor','person'].includes(ref),size={building_floor:3,person:1.75,football_field:105,boeing747:64.4,bus:12}[ref];
+  data.analogies.A_length={ref,axis:height?'height':'length',ref_size_m:size,ratio:(height?51:104)/size,fact:height?'F_overall_height':'F_girder_length',text:'真实尺度对照'};
+  await page.route('**/label-variant.json',route=>route.fulfill({json:data}));
+  await page.goto('/player/index.html?timeline=/fixtures/label-variant.json&mode=render');await page.waitForFunction(()=>!!window.__player);await page.evaluate(()=>window.__player.ready);
+  for(const t of [11,12.5,14.8]){
+   await page.evaluate(t=>window.__player.seek(t),t);
+   const labels=page.locator('.dimension-label');await expect(labels).toHaveCount(2);
+   const a=await labels.nth(0).boundingBox(),b=await labels.nth(1).boundingBox();expect(rectanglesOverlap(a,b)).toBe(false);
+   const stage=await page.locator('#stage').boundingBox();
+   for(const box of [a!,b!]){expect(box.x).toBeGreaterThanOrEqual(stage!.x);expect(box.x+box.width).toBeLessThanOrEqual(stage!.x+stage!.width);}
+   for(const label of [labels.nth(0),labels.nth(1)]){
+    await expect(label).toHaveCSS('font-size','22px');await expect(label).toHaveCSS('color','rgb(255, 255, 255)');
+    await expect(label).toHaveCSS('background-color',/^rgba\(17, 26, 36, 0\.90?2?\)$/);await expect(label).toHaveCSS('border-left-width','4px');
+   }
+   if(height){
+    const left=await page.locator('.dimension-label.left').boundingBox(),right=await page.locator('.dimension-label.right').boundingBox();
+    expect(left!.x+left!.width).toBeLessThan(right!.x);
+    await expect(page.locator('.dimension-label.left')).toHaveText('整机高度 51 m');
+    await expect(page.locator('.dimension-label.right')).toHaveText(ref==='building_floor'?'参照 17 层 × 3 m':'参照 1.75 m');
+   }
+  }
+  await page.unroute('**/label-variant.json');
+ }
+});
