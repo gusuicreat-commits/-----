@@ -1,0 +1,121 @@
+{
+ "task": "extract_facts",
+ "system_head": "你是起重机技术文档参数抽取员。只抽取文档中明确写出的数值参数。\nquote 必须从原文逐字复制，包含该数值，不超过40字；page 为所在页码。\nid 优先使用以下规范 id 与单位：\nF_rated_load(t)、F_girder_length(m)、F_overall_height(m)、F_span(m)、F_lift_height(m)、\nF_hoist_speed(m/min)、F_trolley_speed(m/min)、F_gantry_speed(m/min)、F_leg_height(m)、\nF_girder_height(m)、F_weld_tolerance(mm)、F",
+ "user_head": "=== 第1页 ===\n1230t 造船门式起重机 技术参数表（示例）\n文件编号：DEMO-QD-1230-01\n说明：本文件为黑客松演示用示例资料。额定起重量 1230 t、整机长度 104 m、整机高\n度 51 m 三项取自活动参考场景描述；其余数值为演示示例值，正式使用前须以企业技术文件替\n换。\n适用场景：船厂船体分段吊装、翻身作业。\n演示示例资料\n第 1 页 / 共 3 页\n\n\n=== 第2页 ===\n一、主要技术参数\n项目\n参数\n额定起重量\n1230 t\n主梁总长\n104 m\n整机高度\n51 m\n跨度\n88 m\n起升高度\n45 m\n主梁截面高度\n6.5 m\n起升速度（满载）\n0～8 m/min\n小车运行速度\n0～30 m/min\n大车运行速度\n0～25 m/min\n大车车轮总数\n64 个\n整机自重\n3600 t\n演示示例资料\n第 2 页 / 共 3 页\n\n\n=== 第3页 ===\n二、结构与制造要求\n主梁为双梁箱形结构，由腹板、翼缘板和隔板拼焊而成。\n主梁对接焊缝须 100% 超声波检测，质量等级不低于 GB/T 11345 规定的 B 级\n。\n主梁腹板对接焊缝错边量不大于 0.5 mm。\n支腿采用刚性腿与柔性腿组合结构，柔性腿上端铰接，以适应温度变化引起的主梁伸缩。\n演示示例资料\n第 3 页 / 共 3 页\n",
+ "response": {
+  "facts": [
+   {
+    "id": "F_rated_load",
+    "name": "额定起重量",
+    "value": 1230,
+    "unit": "t",
+    "page": 2,
+    "quote": "额定起重量\n1230 t"
+   },
+   {
+    "id": "F_girder_length",
+    "name": "主梁总长",
+    "value": 104,
+    "unit": "m",
+    "page": 2,
+    "quote": "主梁总长\n104 m"
+   },
+   {
+    "id": "F_overall_height",
+    "name": "整机高度",
+    "value": 51,
+    "unit": "m",
+    "page": 2,
+    "quote": "整机高度\n51 m"
+   },
+   {
+    "id": "F_span",
+    "name": "跨度",
+    "value": 88,
+    "unit": "m",
+    "page": 2,
+    "quote": "跨度\n88 m"
+   },
+   {
+    "id": "F_lift_height",
+    "name": "起升高度",
+    "value": 45,
+    "unit": "m",
+    "page": 2,
+    "quote": "起升高度\n45 m"
+   },
+   {
+    "id": "F_girder_height",
+    "name": "主梁截面高度",
+    "value": 6.5,
+    "unit": "m",
+    "page": 2,
+    "quote": "主梁截面高度\n6.5 m"
+   },
+   {
+    "id": "F_hoist_speed",
+    "name": "最大起升速度（满载）",
+    "value": 8,
+    "unit": "m/min",
+    "page": 2,
+    "quote": "起升速度（满载）\n0～8 m/min"
+   },
+   {
+    "id": "F_trolley_speed",
+    "name": "最大小车运行速度",
+    "value": 30,
+    "unit": "m/min",
+    "page": 2,
+    "quote": "小车运行速度\n0～30 m/min"
+   },
+   {
+    "id": "F_gantry_speed",
+    "name": "最大大车运行速度",
+    "value": 25,
+    "unit": "m/min",
+    "page": 2,
+    "quote": "大车运行速度\n0～25 m/min"
+   },
+   {
+    "id": "F_wheel_count",
+    "name": "大车车轮总数",
+    "value": 64,
+    "unit": "个",
+    "page": 2,
+    "quote": "大车车轮总数\n64 个"
+   },
+   {
+    "id": "F_total_mass",
+    "name": "整机自重",
+    "value": 3600,
+    "unit": "t",
+    "page": 2,
+    "quote": "整机自重\n3600 t"
+   },
+   {
+    "id": "F_weld_inspection",
+    "name": "焊缝超声波检测比例",
+    "value": 100,
+    "unit": "%",
+    "page": 3,
+    "quote": "主梁对接焊缝须 100% 超声波检测"
+   },
+   {
+    "id": "F_weld_tolerance",
+    "name": "主梁腹板对接焊缝错边量",
+    "value": 0.5,
+    "unit": "mm",
+    "page": 3,
+    "quote": "主梁腹板对接焊缝错边量不大于 0.5 mm。"
+   },
+   {
+    "id": "F_leg_height",
+    "name": "支腿高度（故意错误的测试候选）",
+    "value": 42,
+    "unit": "m",
+    "page": 3,
+    "quote": "支腿高度为 42 m。"
+   }
+  ]
+ }
+}
