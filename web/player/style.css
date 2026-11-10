@@ -30,5 +30,8 @@
 /* 实拍标题与署名分别保留局部遮罩，主体画面不做整体压暗。 */
 .media-copy{width:1720px;max-width:1720px;white-space:nowrap;word-break:keep-all;line-break:strict;line-height:1.2;padding:16px 20px;background:linear-gradient(135deg,rgba(11,17,24,.65),transparent)}
 #media img,#media video{object-position:50% 50%;transform-origin:50% 50%}
-#credit{left:75px;max-width:60%;font-size:14px;line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal;padding:6px 12px;background:linear-gradient(135deg,rgba(11,17,24,.65),transparent);text-shadow:0 1px 3px #000}
+#credit{left:75px;max-width:60%;font-size:14px;line-height:20px;white-space:pre-line;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;padding:6px 12px;background:linear-gradient(135deg,rgba(11,17,24,.65),transparent);text-shadow:0 1px 3px #000}
 #labels .label-background{fill:#111a24;stroke:none}
+
+/* 统一眉题底片，适应明暗场景。 */
+.eyebrow,.section-title small{width:fit-content;background:#111a24cc;border-radius:6px;padding:4px 10px}

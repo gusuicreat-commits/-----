@@ -43,7 +43,7 @@ export function render(ctx,shot,t,dur){
  const right=new THREE.Vector3(1,0,0).applyQuaternion(ctx.camera.quaternion),up=new THREE.Vector3(0,1,0).applyQuaternion(ctx.camera.quaternion);
  // 从近裁剪面取屏幕中心的世界坐标，再落到钢板中心的深度平面。
  const center=bounds.getCenter(new THREE.Vector3()),projected=screen(ctx,center);
- hairs.position.copy(center).addScaledVector(right,(1520-projected.x)/960*halfWidth).addScaledVector(up,(projected.y-620)/540*halfHeight);
+ hairs.position.copy(center).addScaledVector(right,(1520-projected.x)/960*halfWidth).addScaledVector(up,(projected.y-596)/540*halfHeight);
  for(const hair of hairs.children)hair.material.opacity=opacity;
  g.updateMatrixWorld(true);
  const left=screen(ctx,hairs.localToWorld(new THREE.Vector3(-width/2,0,length/2)));
@@ -53,6 +53,6 @@ export function render(ctx,shot,t,dur){
  const low=screen(ctx,weld.localToWorld(new THREE.Vector3(-gap/2,thickness/2,depth/2)));
  const high=screen(ctx,weld.localToWorld(new THREE.Vector3(gap/2,thickness/2+width,depth/2)));
  const x=low.x-130;
- ctx.labels.innerHTML=`<g class="weld-step-dimension"><path d="M ${low.x} ${low.y} H ${x-12} M ${high.x} ${high.y} H ${x-12} M ${x} ${low.y} V ${high.y}"/><text x="${x-20}" y="${(low.y+high.y)/2+8}" text-anchor="end">${esc(millimeters)} mm</text><text x="${x}" y="${low.y+45}" text-anchor="middle">错边 · 示意放大</text></g><g opacity="${opacity}"><path class="hair-dimension" d="M ${left.x} ${y-12} v 24 M ${end.x} ${y-12} v 24 M ${left.x} ${y} H ${end.x}"/><text x="${(left.x+end.x)/2}" y="${y+38}" text-anchor="middle">${esc(millimeters)} mm · 等比对照</text><text class="hair-label" x="${left.x}" y="${y+72}">头发丝直径 ${esc(size.size)} ${esc(size.unit)}</text></g>`;
+ ctx.labels.innerHTML=`<g class="weld-step-dimension"><path d="M ${low.x} ${low.y} H ${x-12} M ${high.x} ${high.y} H ${x-12} M ${x} ${low.y} V ${high.y}"/><text x="${x-20}" y="${(low.y+high.y)/2+8}" text-anchor="end">${esc(millimeters)} mm</text><text x="${x}" y="${low.y+45}" text-anchor="middle">错边 · 示意放大</text></g><g opacity="${opacity}"><path class="hair-dimension" d="M ${left.x} ${y-12} v 24 M ${end.x} ${y-12} v 24 M ${left.x} ${y} H ${end.x}"/><text class="hair-scale-label" x="${(left.x+end.x)/2}" y="${y+38}" text-anchor="middle">${esc(millimeters)} mm · 等比对照</text><text class="hair-label" x="${left.x}" y="${y+100}">头发丝直径 ${esc(size.size)} ${esc(size.unit)}</text></g>`;
  backLabels(ctx);
 }
