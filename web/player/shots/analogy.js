@@ -57,8 +57,7 @@ export function setup(ctx,shot){const a=ctx.timeline.analogies?.[shot.params.ana
  const local=new THREE.Box3().setFromObject(r),heightAxis=a.axis==='height';
  // 参照物从第一帧起就与设备对齐，不用横向滑入破坏真实尺度。
  if(heightAxis){
-  const leg=new THREE.Box3().setFromObject(ctx.model.getObjectByName('leg_right')||ctx.model);
-  r.position.set(leg.max.x+6-local.min.x,-local.min.y,leg.getCenter(new THREE.Vector3()).z-local.getCenter(new THREE.Vector3()).z);
+  r.position.set(crane.max.x+6-local.min.x,-local.min.y,crane.getCenter(new THREE.Vector3()).z-local.getCenter(new THREE.Vector3()).z);
  }else{
   // 轨道可能比设备本体更长，统一放在完整轨道占地之外。
   const footprint=crane.clone();
@@ -79,13 +78,14 @@ export function render(ctx,shot,t,dur){
  const g=ctx.groups.get(shot.id),a=g.userData.a;g.visible=true;
  const crane=new THREE.Box3().setFromObject(ctx.model.getObjectByName('crane')||ctx.model),girder=new THREE.Box3().setFromObject(ctx.model.getObjectByName('girder')||ctx.model),ref=new THREE.Box3().setFromObject(g.userData.ref);
  const heightAxis=a.axis==='height';
- frameParallel(ctx,[crane,ref],heightAxis?{angle:0,elevation:8,height:.62,cy:.47}:{angle:-35,elevation:35,width:.62,cy:.43});
- const f=ctx.timeline.facts[a.fact],ground=0,dimensionZ=Math.max(crane.max.z,ref.max.z);
+ frameParallel(ctx,[crane,ref],heightAxis?{angle:0,elevation:0,height:.62,cy:.47}:{angle:-35,elevation:35,width:.62,cy:.43});
+ // 正面平行投影让 y=0 与包围盒顶端直接对应屏幕上下端点。
+ const f=ctx.timeline.facts[a.fact],ground=0;
  const size=referenceSize(a);
  const refText=a.ref==='building_floor'?`参照 ${Number(a.ratio.toFixed(2))} 层 × ${size.size} ${size.unit}`:`参照 ${size.size} ${size.unit}`;
  const dimensions=heightAxis?[
-  [new THREE.Vector3(crane.min.x-3,ground,dimensionZ),new THREE.Vector3(crane.min.x-3,crane.max.y,dimensionZ),`${f?.name||'整机高度'} ${f?.value??ctx.size.y} ${f?.unit||'m'}`,'#ff8a1f'],
-  [new THREE.Vector3(ref.max.x+3,ground,dimensionZ),new THREE.Vector3(ref.max.x+3,ref.max.y,dimensionZ),refText,'#38d1ff']
+  [new THREE.Vector3(crane.min.x-3,ground,crane.max.z),new THREE.Vector3(crane.min.x-3,crane.max.y,crane.max.z),`${f?.name||'整机高度'} ${f?.value??ctx.size.y} ${f?.unit||'m'}`,'#ff8a1f'],
+  [new THREE.Vector3(ref.max.x+3,ground,ref.max.z),new THREE.Vector3(ref.max.x+3,ref.max.y,ref.max.z),refText,'#38d1ff']
  ]:[
   [new THREE.Vector3(girder.min.x,crane.max.y+4,girder.max.z),new THREE.Vector3(girder.max.x,crane.max.y+4,girder.max.z),`主梁 ${f?.value??Number((girder.max.x-girder.min.x).toFixed(2))} ${f?.unit||'m'}`,'#ff8a1f'],
   [new THREE.Vector3(ref.min.x,ref.max.y+1,ref.max.z+3),new THREE.Vector3(ref.max.x,ref.max.y+1,ref.max.z+3),refText,'#38d1ff']

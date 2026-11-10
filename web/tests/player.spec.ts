@@ -90,12 +90,12 @@ test('长度类比左端对齐、轨道外留六米且双物体位于安全区',
  }
 });
 test('高度类比与支腿并排、同地面且标注双高度',async()=>{
- const ctx=await geometryContext(),module=await import('../player/shots/analogy.js'),crane=new ctx.THREE.Box3().setFromObject(ctx.model.getObjectByName('crane')),leg=new ctx.THREE.Box3().setFromObject(ctx.model.getObjectByName('leg_right'));
+ const ctx=await geometryContext(),module=await import('../player/shots/analogy.js'),crane=new ctx.THREE.Box3().setFromObject(ctx.model.getObjectByName('crane'));
  for(const [ref,size] of [['building_floor',3],['person',1.75]] as const){
   ctx.timeline.analogies[ref]={ref,axis:'height',ref_size_m:size,ref_size:size,ref_unit:'m',ratio:51/size,fact:'F_overall_height',text:'真实尺度对照'};
   const shot={id:ref,params:{analogy:ref}};module.setup(ctx,shot);module.render(ctx,shot,2.5,5);
   const reference=new ctx.THREE.Box3().setFromObject(ctx.groups.get(ref).userData.ref);
-  expect(reference.min.y).toBeCloseTo(crane.min.y,5);expect(reference.min.x-leg.max.x).toBeCloseTo(6,5);
+  expect(reference.min.y).toBeCloseTo(crane.min.y,5);expect(reference.min.x-crane.max.x).toBeCloseTo(6,5);expect(crane.intersectsBox(reference)).toBe(false);
   expect((ctx.labels.innerHTML.match(/class="dimension"/g)||[]).length).toBe(2);
   const p=projectedBounds(ctx,crane.clone().union(reference));
   expect(p.bottom-p.top).toBeGreaterThanOrEqual(.55);expect(p.bottom-p.top).toBeLessThanOrEqual(.70);
@@ -322,6 +322,10 @@ test('焊缝文字参数卡与模型及尺寸标签在双分辨率下互不重�
    }
    const card=await page.locator('#numbers').boundingBox();
    await expect(page.locator('#labels .label-background')).toHaveCount(4);
+   const hairScale=(await page.locator('.hair-scale-label').boundingBox())!,hairLabel=(await page.locator('.hair-label').boundingBox())!,scale=stage.width/1920;
+   expect((hairLabel.y-hairScale.y-hairScale.height)/scale).toBeGreaterThanOrEqual(10);
+   const scaleBacking=(await page.locator('.hair-scale-label').evaluate(el=>el.previousElementSibling!.getBoundingClientRect().toJSON())),hairBacking=(await page.locator('.hair-label').evaluate(el=>el.previousElementSibling!.getBoundingClientRect().toJSON()));
+   expect((hairBacking.y-scaleBacking.y-scaleBacking.height)/scale).toBeGreaterThanOrEqual(10);
    for(const text of await page.locator('#labels text').all())await expect(text).toHaveCSS('fill','rgb(255, 255, 255)');
    for(const label of await page.locator('#labels .label-background').all()){
     await expect(label).toHaveCSS('fill','rgb(17, 26, 36)');
@@ -348,7 +352,10 @@ test('实拍标题去前缀不折词且署名紧邻字幕上方',async({page})=>
     else await expect(title).toHaveText('造船厂门式起重机');
     await expect(title).toHaveCSS('word-break','keep-all');await expect(title).toHaveCSS('line-break','strict');await expect(title).toHaveCSS('background-image',/linear-gradient/);
     const stage=(await page.locator('#stage').boundingBox())!,credit=(await page.locator('#credit').boundingBox())!,scale=stage.width/1920;
-    expect(credit.width).toBeLessThanOrEqual(stage.width*.6+.1);await expect(page.locator('#credit')).toHaveCSS('font-size','14px');await expect(page.locator('#credit')).toHaveCSS('text-overflow','ellipsis');
+    expect(credit.width).toBeLessThanOrEqual(stage.width*.6+.1);await expect(page.locator('#credit')).toHaveCSS('font-size','14px');await expect(page.locator('#credit')).toHaveCSS('text-overflow','clip');
+    await expect(page.locator('#credit')).toHaveText('图：Hannah Forey / CC BY-SA 4.0\ncommons.wikimedia.org');
+    const creditMetrics=await page.locator('#credit').evaluate((el:HTMLElement)=>({height:el.clientHeight,scroll:el.scrollHeight,width:el.clientWidth,scrollWidth:el.scrollWidth}));
+    expect(creditMetrics.height).toBeLessThanOrEqual(52);expect(creditMetrics.scroll).toBe(creditMetrics.height);expect(creditMetrics.scrollWidth).toBeLessThanOrEqual(creditMetrics.width);
     if(t===32.5){const subtitle=(await page.locator('#caption').boundingBox())!;expect(Math.abs((subtitle.y-credit.y-credit.height)/scale-12)).toBeLessThan(1);}
     const transform=await page.locator('#media img').evaluate(el=>{const m=new DOMMatrix(getComputedStyle(el).transform);return {scale:m.a,x:m.e,y:m.f};});
     expect(transform.scale).toBeCloseTo(1+.08*(t-30)/5,5);expect(transform.x).toBe(0);expect(transform.y).toBe(0);
@@ -399,22 +406,70 @@ test('高度类比与零地面对齐且顶端包含小车外包',async()=>{
  const z=Math.max(crane.max.z,ref.max.z),ys=[0,crane.max.y,ref.max.y].map(y=>(1-new ctx.THREE.Vector3(0,y,z).project(ctx.camera).y)*540);
  expect(lines[0][0].y).toBeCloseTo(ys[0],5);expect(lines[1][0].y).toBeCloseTo(ys[0],5);
  expect(lines[0][1].y).toBeCloseTo(ys[1],5);expect(lines[1][1].y).toBeCloseTo(ys[2],5);
+ for(const [i,bounds] of [crane,ref].entries()){
+  const p=projectedBounds(ctx,bounds);
+  expect(Math.abs(lines[i][1].y-p.top*1080)).toBeLessThan(6);
+  const ground=bounds.clone();ground.min.y=0;
+  expect(Math.abs(lines[i][0].y-projectedBounds(ctx,ground).bottom*1080)).toBeLessThan(6);
+ }
+ expect(ref.min.x-crane.max.x).toBeGreaterThanOrEqual(6-1e-8);expect(crane.intersectsBox(ref)).toBe(false);
 });
-test('GLB节点爆炸引线锚定小车本体且右侧槽位按高度排序',async()=>{
+function segmentsIntersect(a,b,c,d){
+ const cross=(p,q,r)=>(q.x-p.x)*(r.y-p.y)-(q.y-p.y)*(r.x-p.x);
+ const inside=(p,q,r)=>Math.min(p.x,q.x)-1e-7<=r.x&&r.x<=Math.max(p.x,q.x)+1e-7&&Math.min(p.y,q.y)-1e-7<=r.y&&r.y<=Math.max(p.y,q.y)+1e-7;
+ const values=[cross(a,b,c),cross(a,b,d),cross(c,d,a),cross(c,d,b)];
+ if(values[0]*values[1]<0&&values[2]*values[3]<0)return true;
+ return [[a,b,c,values[0]],[a,b,d,values[1]],[c,d,a,values[2]],[c,d,b,values[3]]].some(([p,q,r,v])=>Math.abs(v as number)<1e-7&&inside(p,q,r));
+}
+function explodedLabels(svg){
+ return [...svg.matchAll(/data-part="([^"]+)" data-side="([^"]+)"><path d="([^"]+)"[\s\S]*?<circle cx="([^"]+)" cy="([^"]+)"[\s\S]*?<rect x="([^"]+)" y="([^"]+)"/g)].map(m=>({id:m[1],side:m[2],segments:pathSegments(m[3]),x:Number(m[4]),y:Number(m[5]),labelX:Number(m[6]),labelY:Number(m[7])}));
+}
+function assertLeadersSeparate(labels){
+ for(let i=0;i<labels.length;i++)for(let j=i+1;j<labels.length;j++){
+  for(const [a,b] of labels[i].segments)for(const [c,d] of labels[j].segments){
+   expect(segmentsIntersect(a,b,c,d),`${labels[i].id} 与 ${labels[j].id} 引线交叉`).toBe(false);
+  }
+ }
+}
+test('GLB节点爆炸引线按世界左右及投影高度分槽且任意线段不交叉',async()=>{
  const ctx=await geometryContext(),module=await import('../player/shots/exploded.js');
  const shot=fixture.shots.find(s=>s.kind==='exploded');
- for(const t of [0,1,2.5,4.9]){
+ for(const t of [0,.1,.5,1,2.5,4.5,4.9,5]){
   for(const o of ctx.originals)o.n.position.copy(o.p);
-  module.render(ctx,shot,t,5);
-  const labels=[...ctx.labels.innerHTML.matchAll(/data-part="([^"]+)"[\s\S]*?<circle cx="([^"]+)" cy="([^"]+)"[\s\S]*?<rect x="([^"]+)" y="([^"]+)"/g)];
-  expect(labels).toHaveLength(4);
-  for(let i=0;i<labels.length;i++){
-   const [,id,x,y,labelX,labelY]=labels[i],node=ctx.model.getObjectByName(id);
-   // 小车本体单独命名，不把吊钩和绳索纳入期望锚点。
-   const target=id==='trolley'?node.getObjectByName('trolley_body'):node;
-   const center=new ctx.THREE.Box3().setFromObject(target).getCenter(new ctx.THREE.Vector3()).project(ctx.camera);
-   expect(Number(x)).toBeCloseTo((center.x+1)*960,5);expect(Number(y)).toBeCloseTo((1-center.y)*540,5);expect(Number(labelX)).toBe(1590);
-   if(i){expect(Number(y)).toBeGreaterThanOrEqual(Number(labels[i-1][3]));expect(Number(labelY)).toBeGreaterThan(Number(labels[i-1][5]));}
+  ctx.camera.updateProjectionMatrix();module.render(ctx,shot,t,5);
+  const labels=explodedLabels(ctx.labels.innerHTML),center=new ctx.THREE.Box3().setFromObject(ctx.model.getObjectByName('crane')).getCenter(new ctx.THREE.Vector3());
+  expect(labels).toHaveLength(5);expect(labels.map(v=>v.id)).toContain('cab');expect(ctx.labels.innerHTML).toContain('司机室');
+  for(const v of labels){
+   const node=ctx.model.getObjectByName(v.id),anchor=new ctx.THREE.Box3().setFromObject(node).getCenter(new ctx.THREE.Vector3()),left=anchor.x<center.x;
+   anchor.project(ctx.camera);
+   expect(v.x).toBeCloseTo((anchor.x+1)*960,5);expect(v.y).toBeCloseTo((1-anchor.y)*540,5);
+   expect(v.side).toBe(left?'left':'right');expect(v.labelX).toBe(left?95:1590);
+   expect(v.segments).toHaveLength(2);expect(v.segments[0][1].y).toBeCloseTo(v.y,5);
+   expect(v.segments[1][1].y).toBeLessThanOrEqual(v.y+1e-6);
+   expect(v.labelY).toBeGreaterThan(v.side==='left'?240:124);expect(v.labelY+50).toBeLessThan(800);
+  }
+  for(const side of ['left','right']){
+   const column=labels.filter(v=>v.side===side);
+   for(let i=1;i<column.length;i++){expect(column[i].y).toBeGreaterThanOrEqual(column[i-1].y);expect(column[i].labelY-column[i-1].labelY).toBeGreaterThanOrEqual(70-1e-6);}
+  }
+  assertLeadersSeparate(labels);
+ }
+});
+test('GLB节点司机室随刚性腿移动且兼容父子层级和显式拆分列表',async()=>{
+ const module=await import('../player/shots/exploded.js');
+ for(const attached of [false,true])for(const explicit of [false,true]){
+  const ctx=await geometryContext(),cab=ctx.model.getObjectByName('cab'),leg=ctx.model.getObjectByName('leg_left');
+  if(attached)leg.attach(cab);
+  const origins=[];ctx.model.traverse(n=>origins.push({n,p:n.position.clone()}));
+  const relative=cab.getWorldPosition(new ctx.THREE.Vector3()).sub(leg.getWorldPosition(new ctx.THREE.Vector3()));
+  const shot=structuredClone(fixture.shots.find(s=>s.kind==='exploded'));if(explicit)shot.params.parts.push('cab');
+  for(const t of [2.5,0,4.8,1,5]){
+   for(const o of origins)o.n.position.copy(o.p);
+   module.render(ctx,shot,t,5);
+   const actual=cab.getWorldPosition(new ctx.THREE.Vector3()).sub(leg.getWorldPosition(new ctx.THREE.Vector3()));
+   expect(actual.distanceTo(relative)).toBeLessThan(1e-8);
+   if(t===2.5)expect(leg.position.x).toBeLessThan(origins.find(o=>o.n===leg).p.x);
+   expect(explodedLabels(ctx.labels.innerHTML).filter(v=>v.id==='cab')).toHaveLength(1);
   }
  }
 });
@@ -425,4 +480,41 @@ test('GLB节点引线绕开其他部件矩形且避线算法处理斜线',async(
  for(let i=1;i<route.length;i++)expect(lineTouchesRect(route[i-1],route[i],obstacle)).toBe(false);
  expect(segmentIntersectsRect({x:0,y:0},{x:600,y:600},obstacle)).toBe(true);
  expect(segmentIntersectsRect({x:0,y:0},{x:200,y:600},obstacle)).toBe(false);
+});
+
+test('实拍署名保留作者许可且来源链接只展示域名',async()=>{
+ const {mediaCredit}=await import('../player/shots/real_media.js');
+ expect(mediaCredit(fixture.assets.IMG_01.credit)).toBe('图：Hannah Forey / CC BY-SA 4.0\ncommons.wikimedia.org');
+ expect(mediaCredit(fixture.assets.IMG_02.credit)).toBe('图：Federal Highway Administration / Public domain\ncommons.wikimedia.org');
+ expect(mediaCredit('本设备实拍')).toBe('图：本设备实拍');expect(mediaCredit('')).toBe('');
+});
+
+test('所有镜头眉题有深色底片且切镜保持一致',async({page})=>{
+ await ready(page);
+ for(const shot of fixture.shots){
+  await page.evaluate(t=>window.__player.seek(t),(shot.start+shot.end)/2);
+  for(const eyebrow of await page.locator('.eyebrow,.section-title small').all()){
+   await expect(eyebrow).toHaveCSS('background-color','rgba(17, 26, 36, 0.8)');
+   await expect(eyebrow).toHaveCSS('border-radius','6px');await expect(eyebrow).toHaveCSS('padding','4px 10px');
+  }
+ }
+});
+
+test('爆炸镜头实际标签无引线交叉且避开标题字幕',async({page})=>{
+ for(const viewport of [{width:1920,height:1080},{width:1366,height:768}]){
+  await page.setViewportSize(viewport);await ready(page);
+  for(const t of [20.1,21,22.5,24.9,21]){
+   await page.evaluate(t=>window.__player.seek(t),t);
+   const labels=explodedLabels(await page.locator('#labels').innerHTML());
+   expect(labels).toHaveLength(5);assertLeadersSeparate(labels);
+   await expect(page.locator('#labels [data-part="cab"] text')).toHaveText('司机室');
+   const title=(await page.locator('.section-title').boundingBox())!,badge=(await page.locator('#badge').boundingBox())!,caption=await page.locator('#caption').boundingBox();
+   const rects=[];
+   for(const label of await page.locator('#labels [data-part] rect').all()){
+    const rect=(await label.boundingBox())!;
+    for(const obstacle of [title,badge,caption,...rects].filter(Boolean))expect(rectanglesOverlap(rect,obstacle)).toBe(false);
+    rects.push(rect);
+   }
+  }
+ }
 });

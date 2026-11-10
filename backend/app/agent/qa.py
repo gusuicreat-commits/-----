@@ -43,6 +43,11 @@ def append_warning(pid: str, message: str, shot: str | None = None) -> None:
 
 
 def visual_qa(pid: str, run: str, *, base_url: str) -> dict:
+    # 每轮只保留本轮画面问题，其他阶段的问题原样保留。
+    with storage.LOCK:
+        data = storage.read_json(pid, "issues.json", {"issues": []})
+        data["issues"] = [item for item in data["issues"] if item.get("code") != "VISUAL_QA"]
+        storage.write_json(pid, "issues.json", data)
     args = dict(run=run, stage="qa", tool="llm.opus.visual_qa")
     emit(pid, **args, status="start", summary="正在抽帧并检查画面")
     result: dict = {"shots": []}

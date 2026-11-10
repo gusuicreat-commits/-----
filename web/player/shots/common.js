@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {routeLeader} from './layout.js';
+import {routeLeader,splitLeaderSlots} from './layout.js';
 export const clamp = (x,a=0,b=1) => Math.max(a,Math.min(b,x));
 export const ease = x => (x=clamp(x))<.5?4*x*x*x:1-(-2*x+2)**3/2;
 export const esc = s => String(s ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -29,15 +29,28 @@ export function projectBounds(ctx,bounds){
  const x=Math.min(...points.map(p=>p.x)),y=Math.min(...points.map(p=>p.y));
  return {x,y,width:Math.max(...points.map(p=>p.x))-x,height:Math.max(...points.map(p=>p.y))-y};
 }
-export function labelNodes(ctx,ids,{rightSide=false}={}){
+export function labelNodes(ctx,ids,{splitSides=false}={}){
  ctx.scene.updateMatrixWorld(true);ctx.camera.updateMatrixWorld();
+ if(splitSides){
+  const center=new THREE.Box3().setFromObject(ctx.model.getObjectByName('crane')||ctx.model).getCenter(new THREE.Vector3());
+  const items=[...new Set(ids)].map(id=>{
+   const node=ctx.model.getObjectByName(id);if(!node)return null;
+   const anchor=new THREE.Box3().setFromObject(node).getCenter(new THREE.Vector3());
+   return {id,left:anchor.x<center.x,...projectPoint(ctx,anchor)};
+  }).filter(Boolean);
+  ctx.labels.innerHTML=splitLeaderSlots(items).map(v=>{
+   const {x,y}=v.label;
+   return `<g data-part="${esc(v.id)}" data-side="${v.left?'left':'right'}"><path d="${v.points.map((p,j)=>`${j?'L':'M'} ${p.x} ${p.y}`).join(' ')}"/><circle cx="${v.x}" cy="${v.y}" r="5"/><rect x="${x}" y="${y}" width="210" height="50" rx="8"/><text x="${x+20}" y="${y+34}">${names[v.id]||esc(v.id)}</text></g>`;
+  }).join('');
+  return;
+ }
  const parts=[...new Set([...Object.keys(names),'rope','rail_left','rail_right',...ids])].map(id=>{
   const node=ctx.model.getObjectByName(id);if(!node)return null;
   const bounds=partBounds(node);return {id,...projectPoint(ctx,bounds.getCenter(new THREE.Vector3())),rect:projectBounds(ctx,bounds)};
  }).filter(Boolean);
  const items=parts.filter(p=>ids.includes(p.id)).sort((a,b)=>a.y-b.y);
  ctx.labels.innerHTML=items.map((v,i)=>{
-  const left=!rightSide&&v.x<960,x=left?95:1590,y=rightSide?300+i*Math.min(85,440/Math.max(1,items.length-1)):385+i*85;
+  const left=v.x<960,x=left?95:1590,y=385+i*85;
   const points=routeLeader(v,{x:left?x+210:x,y:y+25},parts.filter(p=>p!==v).map(p=>p.rect));
   return `<g data-part="${esc(v.id)}"><path d="${points.map((p,j)=>`${j?'L':'M'} ${p.x} ${p.y}`).join(' ')}"/><circle cx="${v.x}" cy="${v.y}" r="5"/><rect x="${x}" y="${y}" width="210" height="50" rx="8"/><text x="${x+20}" y="${y+34}">${names[v.id]||esc(v.id)}</text></g>`;
  }).join('');
