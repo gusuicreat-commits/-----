@@ -54,6 +54,16 @@ motion 只能用模型 rig 里存在的轴，from_m/to_m 在 range_m 内。
 局部改写保留镜头 id；只返回请求的镜头，仍须遵守全部规则。
 ''' + KIND_DESCRIPTIONS
 
+PHOTOREAL_SYSTEM = "画面风格为写实三维：模型镜头是本片最强画面。开场第一个镜头用 model_orbit（整机环绕，highlight 选 girder），若有 real_media 放在第二个；必须各有 1 个 exploded 与 motion；model_orbit、exploded、motion、title 合计不少于 3 个；analogy 最多 1 个。"
+
+
+def planner_system(pid: str, target_s: float) -> str:
+    system = PLANNER_SYSTEM.replace("{target_s}", f"{target_s:g}")
+    if storage.read_json(pid, "project.json", {}).get("render_mode") == "photoreal":
+        system += "\n" + PHOTOREAL_SYSTEM
+    return system
+
+
 PARAM_PROPERTIES: dict[str, dict] = {}
 for _defaults in PARAM_DEFAULTS.values():
     for _key, _value in _defaults.items():
@@ -189,7 +199,7 @@ def _save(pid: str, run: str, result: dict, calculated: list[dict]) -> dict:
 def plan(pid: str, run: str, *, target_s: float = 45) -> dict:
     context = _context(pid)
     with tool_call(pid, run, "plan", "llm.opus.plan", "正在依据资料生成分镜") as call:
-        raw = llm.complete_json("plan", PLANNER_SYSTEM.replace("{target_s}", f"{target_s:g}"),
+        raw = llm.complete_json("plan", planner_system(pid, target_s),
                                 _prompt(context), PLAN_SCHEMA, pid=pid)
         if not isinstance(raw.get("title"), str) or not isinstance(raw.get("shots"), list) or not raw["shots"]:
             raise llm.LLMError("分镜返回格式无效")
@@ -219,7 +229,7 @@ def _edit(pid: str, run: str, selected: list[str], issues: list[dict], instructi
         extra = {"issues": issues, "instruction": instruction, "analogies": result.get("analogies", [])}
         extra["shot" if task == "revise" else "shots"] = shots[0] if task == "revise" else shots
         duration = sum(s["duration_s"] for s in result["shots"])
-        raw = llm.complete_json(task, PLANNER_SYSTEM.replace("{target_s}", f"{duration:g}"), _prompt(context, **extra),
+        raw = llm.complete_json(task, planner_system(pid, duration), _prompt(context, **extra),
                                 SHOT_SCHEMA if task == "revise" else REPAIR_SCHEMA, pid=pid)
         replacements = [raw] if task == "revise" else raw.get("shots", [])
         if task == "revise":

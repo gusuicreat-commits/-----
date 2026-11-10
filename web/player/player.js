@@ -1,3 +1,4 @@
+import {applyTwilight} from './shots/theme.js';
 import {backgroundFrame,anchorPoints,loadBackgrounds,showBackground} from './background.js';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -33,9 +34,11 @@ api.ready=(async()=>{
  const scene=new THREE.Scene();scene.background=new THREE.Color(sceneBackground);scene.fog=new THREE.Fog(sceneBackground,230,650);
  const camera=new THREE.PerspectiveCamera(40,1920/1080,.01,2500);
  const pmrem=new THREE.PMREMGenerator(renderer),room=new RoomEnvironment();scene.environment=pmrem.fromScene(room,.04).texture;room.dispose();pmrem.dispose();
- const sun=new THREE.DirectionalLight('#fff1dc',3.2);sun.position.set(-70,120,65);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);Object.assign(sun.shadow.camera,{left:-110,right:110,top:110,bottom:-110,near:1,far:350});sun.shadow.bias=-.001;scene.add(sun);scene.add(new THREE.HemisphereLight('#bbdcff','#46505c',2.2));
+ const sun=new THREE.DirectionalLight('#fff1dc',3.2);sun.position.set(-70,120,65);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);Object.assign(sun.shadow.camera,{left:-110,right:110,top:110,bottom:-110,near:1,far:350});sun.shadow.bias=-.001;scene.add(sun);const hemisphere=new THREE.HemisphereLight('#bbdcff','#46505c',2.2);scene.add(hemisphere);
  const floor=createGround(camera,gridTexture());scene.add(floor);
  const backdrop=createBackdrop();scene.add(backdrop);
+ const photoreal=timeline.render_mode==='photoreal';
+ const sky=photoreal?applyTwilight({scene,renderer,sun,hemisphere,floor,backdrop}):null;
  const gltf=timeline.model?.glb?await new GLTFLoader().loadAsync(resolve(timeline.model.glb)):null;const model=gltf?.scene || new THREE.Group();scene.add(model);
  const bounds=new THREE.Box3().setFromObject(model),size=bounds.isEmpty()?new THREE.Vector3(104,51,20):bounds.getSize(new THREE.Vector3()),center=bounds.isEmpty()?new THREE.Vector3(0,25,0):bounds.getCenter(new THREE.Vector3());
  if(timeline.model?.rig?.bbox_m){const b=timeline.model.rig.bbox_m;size.set(b.x,b.y,b.z);center.set(0,b.y/2,0);}
@@ -44,7 +47,7 @@ api.ready=(async()=>{
  const backgroundAnchors=await loadBackgrounds(timeline.shots,resolve),preloaded=new Map();
  const media=new Map();await Promise.all(Object.entries(timeline.assets||{}).map(async([id,a])=>media.set(id,await loadMedia(a,resolve))));
  await document.fonts.load('800 96px "PingFang SC"');await document.fonts.load('44px "Noto Sans SC"');await document.fonts.ready;
- ctx={backgroundAnchors,preloaded,timeline,renderer,scene,model,floor,backdrop,originals,materials,camera,center,diagonal:size.length(),size,media,content:$('content'),labels:$('labels'),creative:$('creative'),mediaLayer:$('media'),groups:new Map(),resolve};
+ ctx={photoreal,sky,backgroundAnchors,preloaded,timeline,renderer,scene,model,floor,backdrop,originals,materials,camera,center,diagonal:size.length(),size,media,content:$('content'),labels:$('labels'),creative:$('creative'),mediaLayer:$('media'),groups:new Map(),resolve};
  for(const shot of timeline.shots){shot.params ||= {};if(!kinds[shot.kind])throw new Error(`不支持的镜头类型：${shot.kind}`);await kinds[shot.kind].setup(ctx,shot);}
  api.duration=timeline.duration_s;$('scrub').max=api.duration;$('film-title').textContent=timeline.title || timeline.shots[0].params?.title || '工程的尺度';
  await drawFrame(0);if(preview)setupPreview();
@@ -52,15 +55,16 @@ api.ready=(async()=>{
 async function drawFrame(t){
  if(!Number.isFinite(Number(t)))throw new Error('播放时间必须为有效数字');t=clamp(Number(t),0,api.duration);currentTime=t;
  const shots=ctx.timeline.shots,shot=shots.find(s=>t>=s.start&&t<s.end)|| (t>=shots.at(-1).end?shots.at(-1):shots[0]),index=shots.indexOf(shot),dur=shot.end-shot.start,localT=clamp(t-shot.start,0,dur);
- ctx.originals.forEach(({n,p,s,q,v})=>{n.position.copy(p);n.scale.copy(s);n.quaternion.copy(q);n.visible=v;});ctx.materials.forEach(({m,e,i})=>{m.emissive.copy(e);m.emissiveIntensity=i;});ctx.camera.near=.01;ctx.camera.updateProjectionMatrix();ctx.model.visible=true;ctx.floor.visible=true;ctx.floor.material.map.offset.set(0,0);ctx.scene.background.set(sceneBackground);ctx.renderer.toneMappingExposure=1.15;
+ ctx.originals.forEach(({n,p,s,q,v})=>{n.position.copy(p);n.scale.copy(s);n.quaternion.copy(q);n.visible=v;});ctx.materials.forEach(({m,e,i})=>{m.emissive.copy(e);m.emissiveIntensity=i;});ctx.camera.near=.01;ctx.camera.updateProjectionMatrix();ctx.model.visible=true;ctx.floor.visible=true;ctx.floor.material.map?.offset.set(0,0);if(ctx.photoreal)ctx.scene.background=ctx.sky;else ctx.scene.background.set(sceneBackground);ctx.renderer.toneMappingExposure=ctx.photoreal?1:1.15;
  for(const g of ctx.groups.values())g.visible=false;
  ctx.creative.style.display='none';ctx.mediaLayer.style.display='none';ctx.content.innerHTML='';ctx.labels.innerHTML='';$('numbers').innerHTML='';$('credit').textContent='';$('motion-info').innerHTML='';$('scene').style.visibility='visible';
- $('bg-frame').hidden=true;
+ $('bg-frame').hidden=true;$('bg-frame').style.filter=shot.kind==='data_card'?'brightness(.78)':'';
  await kinds[shot.kind].render(ctx,shot,localT,dur);
  if(shot.bg){
   const frame=backgroundFrame(shot.bg,localT);
   await showBackground($('bg-frame'),shot.bg,frame,ctx.resolve,ctx.preloaded);
   $('scene').style.visibility='hidden';
+  if(shot.kind==='exploded')exploded.renderBackground(ctx,shot,localT,anchorPoints(ctx.backgroundAnchors.get(shot.id),frame,shot.bg));
   if(shot.kind==='model_orbit')labelNodes(ctx,shot.params.highlight||[],{pointSource:anchorPoints(ctx.backgroundAnchors.get(shot.id),frame,shot.bg)});
  }else{
   ctx.preloaded.clear();
@@ -70,6 +74,7 @@ async function drawFrame(t){
  const asset=ctx.timeline.assets?.[shot.params?.asset];const badge=shot.bg?`三维模型渲染 · 写实（Blender） · ${ctx.timeline.model?.kind==='step'?'依据STEP':'参数化重建'}`:shot.source==='real'?(asset?.provenance==='reference'?'参考实拍 · 非本机':'实拍'):shot.source==='ai'?'AI 创意画面':shot.source==='model'?`三维模型渲染 · ${ctx.timeline.model?.kind==='step'?'依据STEP':'参数化重建'}`:'信息图';
  $('badge').textContent=badge;$('badge').style.setProperty('--badge-color',({model:'#38d1ff',real:'#3ad07a',ai:'#a77bff',graphic:'#8996a4'})[shot.source]);
  $('caption').textContent=(ctx.timeline.captions||[]).filter(c=>t>=c.start&&t<c.end).map(c=>c.text).join('\n');
+ data_card.fitPanel(ctx.content,$('caption'));
  const caption=$('caption');$('credit').style.bottom=`${1080-(caption.textContent?caption.offsetTop:890)+12}px`;
  $('chapter').textContent=`${String(index+1).padStart(2,'0')} / ${String(shots.length).padStart(2,'0')}`;
  $('numbers').innerHTML=(['data_card','analogy'].includes(shot.kind)?[]:shot.text_overlays||[]).map(o=>{const f=ctx.timeline.facts?.[o.fact];return f?`<div class="number-card"><div class="name">${esc(f.name)}</div><strong>${esc(f.value)}</strong><span class="unit">${esc(f.unit)}</span><div class="source">${source(f)}</div></div>`:`<div class="number-card">${esc(o.text)}</div>`;}).join('');

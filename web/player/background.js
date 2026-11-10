@@ -9,8 +9,15 @@ export function anchorPoints(payload,index,bg){
  return id=>{
   const point=nodes[id];
   if(!point?.visible || !Number.isFinite(point.x) || !Number.isFinite(point.y))return null;
-  const x=point.x*sx,y=point.y*sy;
-  return {x,y,left:x<960,rect:{x:x-8,y:y-8,width:16,height:16}};
+  const pin=point.pin;
+  const x=(Number.isFinite(pin?.x)?pin.x:point.x)*sx,y=(Number.isFinite(pin?.y)?pin.y:point.y)*sy;
+  const box=point.bbox;
+  const bbox=Array.isArray(box)&&box.length===4&&box.every(Number.isFinite)?
+   [box[0]*sx,box[1]*sy,box[2]*sx,box[3]*sy]:null;
+  const girderX=Number.isFinite(nodes.girder?.x)?nodes.girder.x*sx:960;
+  return {x,y,pin:{x,y},left:x<girderX,bbox,rect:bbox?
+   {x:bbox[0],y:bbox[1],width:bbox[2]-bbox[0],height:bbox[3]-bbox[1]}:
+   {x:x-8,y:y-8,width:16,height:16}};
  };
 }
 export async function loadBackgrounds(shots,resolve){

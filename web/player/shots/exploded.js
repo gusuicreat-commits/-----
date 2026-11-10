@@ -2,7 +2,19 @@ import * as THREE from 'three';
 import {ease,labelNodes,frameParallel,partBounds,projectBounds,projectPoint} from './common.js';
 import {hudSafeArea} from './layout.js';
 export {setup} from './common.js';
+export function renderBackground(ctx,shot,t,pointSource){
+ ctx.content.innerHTML='<div class="section-title"><small>结构分解 / 示意</small>从整体，读懂协同</div>';
+ const safe=hudSafeArea(ctx,shot,t);
+ // 右上数字卡占据整列，标签不进入该列。
+ if(shot.text_overlays?.length)safe.width=Math.min(safe.width,1920*.74-safe.x);
+ labelNodes(ctx,[...new Set([...(shot.params.parts||[]),'cab'])],{splitSides:true,safe,pointSource});
+ for(const id of ['hoist_hook','trolley']){
+  const point=pointSource(id);if(!point)continue;
+  ctx.labels.innerHTML+=`<circle class="part-highlight" data-highlight="${id}" cx="${point.x}" cy="${point.y}" r="22"/>`;
+ }
+}
 export function render(ctx,shot,t,dur){
+ if(shot.bg)return;
  const p=shot.params,amount=ease(Math.min(t/dur*3,(1-t/dur)*3))*(p.spread_m??12)*.6;
  const leg=ctx.model.getObjectByName('leg_left'),cab=ctx.model.getObjectByName('cab');
  const legBefore=leg?.getWorldPosition(new THREE.Vector3()),cabBefore=cab?.getWorldPosition(new THREE.Vector3());

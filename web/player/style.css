@@ -38,3 +38,19 @@
 .eyebrow,.section-title small{width:fit-content;background:#111a24cc;border-radius:6px;padding:4px 10px}
 
 #bg-frame{position:absolute;inset:0;width:1920px;height:1080px;object-fit:cover;pointer-events:none}
+
+/* 项数决定自然高度；四项起双列，完整来源行可换行。 */
+.data-panel{bottom:auto;height:auto;max-height:680px;transform-origin:top left}
+.data-items{display:grid;grid-template-columns:minmax(0,1fr)}
+.data-card{min-width:0;padding:12px 0}
+.data-card .value{font-size:76px;overflow-wrap:anywhere}
+.data-card .data-value{line-height:1.1}
+.data-card .source{line-height:1.35;overflow-wrap:anywhere}
+.data-grid{width:780px}
+.data-grid .data-items{grid-template-columns:repeat(2,minmax(0,1fr));column-gap:28px}
+.data-grid .value{font-size:60px}
+.data-grid .unit{font-size:23px;margin-left:10px}
+
+/* 片尾左上文字在浅色天空上保留可读性。 */
+.outro-shade{position:absolute;inset:0;background:linear-gradient(105deg,rgba(8,14,22,.72) 0%,rgba(8,14,22,.45) 38%,transparent 62%)}
+.outro-background p{color:#F5F7FA;text-shadow:0 1px 3px #0009;max-width:720px;width:fit-content;padding:8px 12px;background:rgba(8,14,22,.5);border-radius:4px;overflow-wrap:anywhere}

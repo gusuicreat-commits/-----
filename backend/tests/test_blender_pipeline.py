@@ -72,18 +72,18 @@ def test_render_cache_and_progress(photoreal, processes):
     data = timeline()
     before = deepcopy(data)
     backgrounds = blender.render_model_shots(pid, 'r1', data)
-    assert set(backgrounds) == {'S1', 'S2', 'S3'}
+    assert set(backgrounds) == {'S1', 'S2', 'S3', 'S4'}
     assert data == before
-    assert len(processes) == 3
-    for bg in backgrounds.values():
-        assert (bg['count'], bg['fps'], bg['engine'], bg['width'], bg['height']) == (60, 30, 'eevee', 1920, 1080)
+    assert len(processes) == 4
+    for sid, bg in backgrounds.items():
+        assert (bg['count'], bg['fps'], bg['engine'], bg['width'], bg['height']) == (30 if sid == 'S4' else 60, 30, 'eevee', 1920, 1080)
         assert bg['frames'].endswith('/frame_%05d.jpg')
     log = events.read_events(pid)
-    assert len([e for e in log if e['status'] == 'ok']) == 3
-    assert [e['detail']['frame'] for e in log if 'frame' in e['detail']] == [30, 60] * 3
+    assert len([e for e in log if e['status'] == 'ok']) == 4
+    assert [e['detail']['frame'] for e in log if 'frame' in e['detail']] == [30, 60] * 4
     assert blender.render_model_shots(pid, 'r2', data) == backgrounds
-    assert len(processes) == 3
-    assert len(list(storage.project_dir(pid).glob('renders/blender/*/done.json'))) == 3
+    assert len(processes) == 4
+    assert len(list(storage.project_dir(pid).glob('renders/blender/*/done.json'))) == 4
 
 
 @pytest.mark.parametrize('failure', ['exit', 'timeout', 'incomplete'])
@@ -98,9 +98,9 @@ def test_failure_warn_and_other_shots_continue(photoreal, monkeypatch, failure):
     monkeypatch.setattr(blender.subprocess, 'Popen', start)
     data = timeline()
     result = blender.render_model_shots(photoreal, 'r1', data)
-    assert set(result) == {'S2', 'S3'}
+    assert set(result) == {'S2', 'S3', 'S4'}
     assert all('bg' not in shot for shot in data['shots'])
-    assert len(list(storage.project_dir(photoreal).glob('renders/blender/*/done.json'))) == 2
+    assert len(list(storage.project_dir(photoreal).glob('renders/blender/*/done.json'))) == 3
     log = events.read_events(photoreal)
     assert [e['summary'] for e in log if e['status'] == 'warn'] == ['镜头 S1 写实渲染失败，已回退网页三维']
     assert not any(e['status'] == 'error' for e in log)
@@ -131,7 +131,7 @@ def test_cache_key_tracks_inputs_and_scripts(tmp_path, monkeypatch):
     args = [shot, facts, 'eevee', 1920, 1080, 30]
     original = blender.cache_key(*args)
     for i, replacement in [(0, {**shot, 'params': {'title': '新标题'}}), (0, {**shot, 'kind': 'motion'}),
-                           (0, {**shot, 'end': 3}), (2, 'cycles'), (3, 960), (4, 540), (5, 24),
+                           (0, {**shot, 'end': 3}), (0, {**shot, 'text_overlays': [{'text': '数字卡'}]}), (2, 'cycles'), (3, 960), (4, 540), (5, 24),
                            (1, {'facts': [{'id': 'F_span', 'value': 90, 'status': 'confirmed'}]}),
                            (1, {'facts': [{'id': 'F_span', 'value': 88, 'status': 'rejected'}]})]:
         changed = args.copy()
@@ -211,3 +211,20 @@ def test_executable_precedence(tmp_path, monkeypatch):
     monkeypatch.delenv('KEPU_BLENDER')
     monkeypatch.setattr(Path, 'is_file', lambda self: False)
     assert blender.blender_executable() == '/path/blender'
+
+
+@pytest.mark.parametrize('kind,overlays,expected', [
+    ('title', [], (.45,.05,.95,.86)), ('title', [{'text':'数字卡'}], (.45,.05,.74,.86)),
+    ('model_orbit', [], (.05,.20,.95,.86)), ('model_orbit', [{'text':'数字卡'}], (.05,.20,.74,.86)),
+    ('motion', [], (.05,.20,.74,.86)), ('exploded', [], (.05,.20,.95,.86)),
+    ('exploded', [{'text':'数字卡'}], (.05,.20,.74,.86)),
+    ('data_card', [{'text':'数字卡'}], (.46,.05,.95,.86)),
+    ('outro', [], (.40,.30,.95,.80)),
+])
+def test_safe_rect_and_command(photoreal, processes, kind, overlays, expected):
+    item = {**timeline()['shots'][0], 'kind':kind, 'text_overlays':overlays}
+    assert blender.shot_safe_rect(item) == expected
+    result = blender.render_model_shots(photoreal, 'r1', {'fps':30,'shots':[item]})
+    assert 'S1' in result
+    command = processes[0].args
+    assert tuple(map(float,command[command.index('--safe-rect')+1].split(','))) == expected

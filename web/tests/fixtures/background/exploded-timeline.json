@@ -1,0 +1,60 @@
+{
+  "fps": 2,
+  "width": 1920,
+  "height": 1080,
+  "duration_s": 3,
+  "model": {
+    "kind": "parametric"
+  },
+  "facts": {},
+  "assets": {},
+  "captions": [
+    {
+      "start": 0,
+      "end": 1.5,
+      "text": "结构分解锚点验证"
+    }
+  ],
+  "shots": [
+    {
+      "id": "S1",
+      "kind": "exploded",
+      "source": "model",
+      "start": 0,
+      "end": 1.5,
+      "params": {
+        "parts": [
+          "girder",
+          "leg_left",
+          "leg_right",
+          "trolley",
+          "hoist_hook",
+          "cab"
+        ],
+        "spread_m": 12
+      },
+      "text_overlays": [
+        {
+          "text": "核验数字"
+        }
+      ],
+      "bg": {
+        "frames": "frame_%05d.jpg",
+        "count": 3,
+        "fps": 2,
+        "anchors": "exploded-anchors.json",
+        "width": 960,
+        "height": 540,
+        "engine": "eevee"
+      }
+    },
+    {
+      "id": "S2",
+      "kind": "model_orbit",
+      "source": "model",
+      "start": 1.5,
+      "end": 3,
+      "params": {}
+    }
+  ]
+}

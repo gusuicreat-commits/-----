@@ -210,3 +210,29 @@ def test_duplicates_checked_after_placeholder_expansion(scenario):
     assert "DUPLICATE_PHRASE" in codes(scenario)
     write_shot(scenario, shot(narration="主梁长{{F_length}}，{{A_length_boeing747}}。"), [analogy])
     assert "DUPLICATE_PHRASE" not in codes(scenario)
+
+
+@pytest.mark.parametrize('mode', ['standard', 'photoreal'])
+def test_photoreal_warnings_only(scenario, mode):
+    project = storage.read_json(scenario,'project.json')
+    storage.write_json(scenario,'project.json',{**project,'render_mode':mode})
+    items = [shot('title'),shot('analogy'),shot('analogy'),shot('real_media')]
+    storage.write_json(scenario,'shotlist.json',{'shots':items,'analogies':[]})
+    issues = [i for i in validate(scenario,'r1')['issues'] if i['code'].startswith('PHOTOREAL_')]
+    assert all(i['severity'] == 'warn' for i in issues)
+    assert {i['code'] for i in issues} == ({
+        'PHOTOREAL_OPENING','PHOTOREAL_REAL_MEDIA_ORDER','PHOTOREAL_MISSING_EXPLODED',
+        'PHOTOREAL_MISSING_MOTION','PHOTOREAL_MODEL_COUNT','PHOTOREAL_ANALOGY_COUNT',
+    } if mode == 'photoreal' else set())
+
+
+@pytest.mark.parametrize('title_first', [False,True])
+def test_photoreal_counts_do_not_require_title(scenario,title_first):
+    project = storage.read_json(scenario,'project.json')
+    storage.write_json(scenario,'project.json',{**project,'render_mode':'photoreal'})
+    items = [shot('title' if title_first else 'model_orbit',params={'highlight':['girder']}),
+             shot('real_media'),shot('exploded'),shot('motion')]
+    storage.write_json(scenario,'shotlist.json',{'shots':items,'analogies':[]})
+    issues = [i for i in validate(scenario,'r1')['issues'] if i['code'].startswith('PHOTOREAL_')]
+    assert {i['code'] for i in issues} == ({'PHOTOREAL_OPENING'} if title_first else set())
+    assert all(i['severity'] == 'warn' for i in issues)

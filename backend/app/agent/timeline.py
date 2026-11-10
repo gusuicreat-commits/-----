@@ -54,12 +54,14 @@ def build_timeline(pid: str) -> dict:
     analogies = resolve_analogies(shotlist, facts)
     assets = {a["id"]: {**a, "url": f"/files/{pid}/{a['file']}"}
               for a in storage.read_json(pid, "assets.json", {"assets": []})["assets"]}
-    model = deepcopy(storage.read_json(pid, "project.json").get("model") or {})
+    project = storage.read_json(pid, "project.json")
+    model = deepcopy(project.get("model") or {})
     rig = storage.read_json(pid, "model/rig.json", {})
     if model:
         model.update(glb=f"/files/{pid}/{model['glb']}", rig=rig)
     timeline = {key: shotlist.get(key, default) for key, default in (("fps", 30), ("width", 1920), ("height", 1080))}
     timeline.update(shots=[], captions=[], facts={}, analogies=analogies, assets=assets, model=model or None,
+                    render_mode=project.get("render_mode", "standard"),
                     audio=f"/files/{pid}/renders/narration.wav", music=compose.select_music(pid))
     position, tracks = 0.0, []
     for shot in shotlist["shots"]:

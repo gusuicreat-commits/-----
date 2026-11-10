@@ -329,6 +329,6 @@ def test_render_backgrounds_are_written_only_to_timeline(stages, monkeypatch, mo
     assert storage.read_json(pid, 'run.json')['state'] == 'done'
     assert len(observed) == 1
     assert ('bg' in observed[0]['shots'][0]) == (mode == 'photoreal' and not fail)
-    assert 'bg' not in observed[0]['shots'][1]
+    assert ('bg' in observed[0]['shots'][1]) == (mode == 'photoreal' and not fail)
     assert storage.read_json(pid, 'shotlist.json') == {'shots':shots}
     assert any(e['status']=='warn' and e['tool']=='render.blender' for e in events.read_events(pid)) == fail

@@ -679,7 +679,10 @@ def test_anchors_use_runtime_projection_and_only_frame_visibility(render_module,
     monkeypatch.setitem(sys.modules,'bpy',NS(context=NS(evaluated_depsgraph_get=lambda: 'graph')))
     monkeypatch.setattr(render_module,'part_objects',lambda parent: [parent])
     monkeypatch.setattr(render_module,'bounds',lambda objects,graph: (Vector((2,4,6)),Vector((4,6,8))))
-    projections = iter([(0.25,.75,10),(-.1,.5,10),(.5,.5,-1),(0,1,10),(.5,.5,0),(1.1,.5,10)])
+    monkeypatch.setitem(sys.modules,'mathutils',NS(Vector=Vector))
+    monkeypatch.setattr(render_module,'surface_pin',lambda *args: Vector((3,5,8)))
+    centers_projection = [(0.25,.75,10),(-.1,.5,10),(.5,.5,-1),(0,1,10),(.5,.5,0),(1.1,.5,10)]
+    projections = iter([p for center in centers_projection for p in [(.26,.76,10),center]+[(.1,.2,10),(.3,.4,10)]*4])
     centers = []
     def project(actual_scene, camera, center):
         assert actual_scene is scene and camera is scene.camera
@@ -687,8 +690,11 @@ def test_anchors_use_runtime_projection_and_only_frame_visibility(render_module,
         return NS(**dict(zip('xyz',next(projections))))
     monkeypatch.setitem(sys.modules,'bpy_extras.object_utils',NS(world_to_camera_view=project))
     result = render_module.anchors(scene,{name:name for name in common.ANCHOR_NODES})
-    assert centers == [(3,5,7)]*6
-    assert result['girder'] == {'x':240,'y':135,'visible':True,'in_frame':True,'center_m':(3,7,-5)}
+    assert centers[1::10] == [(3,5,7)]*6
+    assert centers[::10] == [(3,5,8)]*6
+    assert len(centers) == 60
+    assert result['girder'].pop('pin') == pytest.approx({'x':249.6,'y':129.6})
+    assert result['girder'] == {'x':240,'y':135,'visible':True,'in_frame':True,'center_m':(3,7,-5),'bbox':[96,324,288,432]}
     assert [result[name]['visible'] for name in common.ANCHOR_NODES] == [True,False,False,True,False,False]
     assert result['hoist_hook']['x'] is None
 
@@ -697,6 +703,8 @@ def test_anchors_use_runtime_projection_and_only_frame_visibility(render_module,
     (['--stills','0.5,3,5.5','--preview'],3,False),(['--still-at','3'],1,False),
     (['--duration','1.25','--skip-video'],38,False)])
 @pytest.mark.parametrize('shot', [{'kind':'model_orbit'}, {'kind':'title'},
+    {'kind':'data_card'}, {'kind':'outro'},
+    {'kind':'exploded','params':{'parts':['girder','leg_left','leg_right','trolley','hoist_hook']}},
     *({'kind':'motion','params':{'axis':axis,'from_m':5,'to_m':20}} for axis in ('trolley','hoist','gantry'))])
 def test_render_orchestration_meters_five_times_and_exports_all_frames(
         render_module, monkeypatch, tmp_path, capsys, options, count, video, shot):
@@ -760,9 +768,15 @@ def test_render_orchestration_meters_five_times_and_exports_all_frames(
     assert len(payload['frames']) == len(report['camera_frames']) == len(rendered) == count
     assert all((tmp_path/f['file']).is_file() and len(f['nodes']) == 6 for f in payload['frames'])
     assert [f['exposure'] for f in payload['frames']] == rendered
-    if shot['kind'] == 'model_orbit':
-        assert all(f['projected_bounds_px']['bottom']/report['resolution'][1] == pytest.approx(.84)
-                   for f in report['camera_frames'])
+    x0,y0,x1,y1 = report['safe_rect']
+    width,height = report['resolution']
+    for frame in report['camera_frames']:
+        edges = frame['projected_bounds_px']
+        assert edges['left'] >= x0*width-1e-5 and edges['right'] <= x1*width+1e-5
+        assert edges['top'] >= y0*height-1e-5 and edges['bottom'] <= y1*height+1e-5
+    if shot['kind'] == 'exploded':
+        assert len({tuple(f['position_m']) for f in report['camera_frames']}) == 1
+        assert len({tuple(f['target_m']) for f in report['camera_frames']}) == 1
     assert all(not f['cropped'] for f in report['camera_frames'])
     assert bool(encoded) is video
     if video:
@@ -823,3 +837,175 @@ def test_motion_matches_player_and_rope_endpoints(axis,t,weight):
 def test_frame_format_png_is_optional(render_module):
     args = render_module.arguments(['--facts','f','--shot-json','{}','--out','frames','--frame-format','png'])
     assert render_module.frame_filename(args,1,0) == 'frame_00001.png'
+
+
+@pytest.fixture
+def exploded_boxes():
+    # 腿顶比梁底高 0.7 m，验证实际外包修正而非仅用参数高度。
+    return {'girder':((-52,34,-5.3),(52,43.2,5.3)),
+            'leg_left':((-45,.3,-11.3),(-38,34.7,11.3)),
+            'leg_right':((43,.3,-11.3),(45,34.5,11.3)),
+            'trolley':((-6,42.02,-4.5),(6,47.5,4.5)),
+            'hoist_hook':((-1.5,28,-1.5),(1.5,32,1.5)),
+            'cab':((-43,22,-1.5),(-39,34,1.5))}
+
+
+@pytest.mark.parametrize('spread', [1,12,30])
+def test_exploded_clearance_endpoints_and_rigid_cab(exploded_boxes,spread):
+    parts = list(exploded_boxes)
+    for t in (0,6):
+        offsets = common.exploded_offsets(parts,spread,t,6,exploded_boxes)
+        assert all(value == (0,0,0) for value in offsets.values())
+    offsets = common.exploded_offsets(parts,spread,3,6,exploded_boxes)
+    assert exploded_boxes['girder'][0][1]+offsets['girder'][1] >= 34.7+6
+    assert exploded_boxes['trolley'][0][1]+offsets['trolley'][1] >= 43.2+offsets['girder'][1]+2-1e-9
+    assert offsets['cab'] == offsets['leg_left'] == (-spread*.6,0,0)
+    assert offsets['leg_right'] == (spread*.6,0,0)
+    assert offsets['hoist_hook'] == (0,-spread*.6,0)
+    assert common.exploded_offsets(parts,spread,1e-5,6,exploded_boxes)['girder'][1] < 1e-10
+    assert all(v == (0,0,0) for v in common.exploded_offsets(parts,0,3,6,exploded_boxes).values())
+    assert common.exploded_offsets(['cab'],spread,3,6,exploded_boxes)['cab'] == (0,0,0)
+
+
+@pytest.mark.parametrize('t', [0,.5,3,5.5,6])
+@pytest.mark.parametrize('spread', [0,12])
+def test_exploded_rope_endpoints_and_hook_independence(exploded_boxes,t,spread):
+    dim = common.derive_dimensions({})
+    for parts in (list(exploded_boxes),['trolley']):
+        offsets = common.exploded_offsets(parts,spread,t,6,exploded_boxes)
+        scale,shift = common.exploded_rope(dim,offsets)
+        transform = lambda y: dim.girder_top+offsets['trolley'][1]+(y-dim.girder_top)*scale+shift
+        upper = dim.girder_bottom+offsets['girder'][1] if spread and 0 < t < 6 else dim.girder_top+1
+        assert transform(dim.girder_top+1) == pytest.approx(upper)
+        assert transform(dim.hook_height+3.9) == pytest.approx(dim.hook_height+3.9+offsets['hoist_hook'][1])
+        if parts == ['trolley']:
+            assert offsets['hoist_hook'] == (0,0,0)
+
+
+@pytest.mark.parametrize('safe', [(.05,.2,.95,.86),(.05,.2,.74,.86),(.12,.3,.7,.8)])
+@pytest.mark.parametrize('size', [(1920,1080),(960,540),(1080,1920)])
+def test_exploded_fixed_camera_contains_every_part(exploded_boxes,safe,size):
+    parts = list(exploded_boxes)
+    peak = common.exploded_offsets(parts,12,3,6,exploded_boxes)
+    envelope = common.displaced_corners(exploded_boxes,peak)+common.displaced_corners(exploded_boxes,{})
+    camera,target,shift = common.safe_camera(envelope,13,safe,*size)
+    assert camera[1] == 8
+    assert math.degrees(math.atan2(camera[0],camera[2])) == pytest.approx(13)
+    for t in (0,3,6):
+        points = common.displaced_corners(exploded_boxes,common.exploded_offsets(parts,12,t,6,exploded_boxes))
+        for p in points:
+            q = common.project_point(p,camera,target,*size,common.hero_fov_y(*size))
+            x,y = q['x']/size[0]+shift[0],q['y']/size[1]+shift[1]
+            assert safe[0]-1e-9 <= x <= safe[2]+1e-9
+            assert safe[1]-1e-9 <= y <= safe[3]+1e-9
+    # 最近距离：稍微前移后，即使重新平移画幅，也无法容纳外包。
+    closer = (camera[0]*.999,camera[1],camera[2]*.999)
+    q = [common.project_point(p,closer,target,*size,common.hero_fov_y(*size)) for p in common.enclosing_corners(envelope)]
+    assert ((max(p['x'] for p in q)-min(p['x'] for p in q))/size[0] > safe[2]-safe[0]
+            or (max(p['y'] for p in q)-min(p['y'] for p in q))/size[1] > safe[3]-safe[1])
+
+
+@pytest.mark.parametrize('rect', ['0.1,0.2,0.8', 'nan,0,1,1', '0.8,0.2,0.1,1', '-1,0,1,1'])
+def test_invalid_safe_rect_rejected(render_module,rect):
+    with pytest.raises(SystemExit):
+        render_module.arguments(['--facts','f','--shot-json','{}','--out','frames','--safe-rect='+rect])
+
+
+def test_rope_passages_avoid_solid_deck_and_girder(monkeypatch, exploded_boxes):
+    """读取真实建模调用，验证八条绳索的通道和上端滑轮接点；不加载渲染器。"""
+    from types import SimpleNamespace as NS
+    from unittest.mock import MagicMock
+    class Parent(dict):
+        matrix_world = NS(inverted=lambda:None)
+    fake = NS(data=NS(objects=NS(new=lambda *a:Parent())),
+              context=NS(collection=NS(objects=NS(link=lambda _:None)),view_layer=NS(update=lambda:None)))
+    monkeypatch.setitem(sys.modules,'bpy',fake)
+    monkeypatch.setitem(sys.modules,'mathutils',NS(Vector=object))
+    monkeypatch.setitem(sys.modules,'common',common)
+    spec = importlib.util.spec_from_file_location('crane_geometry_test',ROOT/'blender/crane.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    geometry = MagicMock()
+    monkeypatch.setattr(module,'Geometry',lambda *a:geometry)
+    monkeypatch.setattr(module,'curve_hook',lambda *a:None)
+    dim = common.derive_dimensions({})
+    module.build_crane(dim,{'metal':None})
+    ropes = [c.args for c in geometry.cylinder.call_args_list if c.args[0] == 'rope']
+    boxes = [c.args for c in geometry.box.call_args_list if c.args[0] in {'girder','trolley'}]
+    pulleys = [c.args for c in geometry.cylinder.call_args_list if c.args[0] == 'trolley']
+    offsets = common.exploded_offsets(['girder','leg_left','leg_right','trolley','hoist_hook'],12,3,6,exploded_boxes)
+    assert len(ropes) == 8
+    for state in ({},offsets):
+        for _,bottom,top,radius,*_ in ropes:
+            x,z = top[0],top[2]
+            low_y = bottom[1]+state.get('hoist_hook',(0,0,0))[1]
+            scale, shift = common.exploded_rope(dim, state)
+            high_y = dim.girder_top+state.get('trolley',(0,0,0))[1]+(top[1]-dim.girder_top)*scale+shift
+            for node,size,center,*_ in boxes:
+                y = center[1]+state.get(node,(0,0,0))[1]
+                intersects = (abs(x-center[0]) < size[0]/2+radius
+                              and abs(z-center[2]) < size[2]/2+radius
+                              and low_y < y+size[1]/2 and high_y > y-size[1]/2)
+                assert not intersects, (node,size,center,x,z)
+    for _,bottom,top,radius,*_ in ropes:
+        assert any(a[0] <= top[0] <= b[0] and a[1] == top[1] and abs(top[2]-a[2]) == r
+                   for _,a,b,r,*_ in pulleys)
+        assert any(node == 'hoist_hook' and all(abs(a-b) <= d/2 for a,b,d in zip(bottom,center,size))
+                   for node,size,center,*_ in (c.args for c in geometry.box.call_args_list))
+
+
+@pytest.mark.parametrize('kind,safe,ratio,angle', [
+    ('data_card',(.46,.05,.95,.86),.96,23),
+    ('outro',(.40,.30,.95,.80),1.08,50),
+])
+@pytest.mark.parametrize('size', [(1920,1080),(960,540)])
+def test_graphic_camera_motion_and_safe_frame(kind,safe,ratio,angle,size):
+    points = common.framing_points(common.derive_dimensions({}))
+    start,target,_ = common.graphic_camera(points,kind,0,6,safe,*size)
+    end,_,_ = common.graphic_camera(points,kind,6,6,safe,*size)
+    assert math.dist(end,target)/math.dist(start,target) == pytest.approx(ratio)
+    assert math.degrees(math.atan2(start[0]-target[0],start[2]-target[2])) == pytest.approx(angle)
+    for t in (0,1.5,3,4.5,6):
+        camera,target,shift = common.graphic_camera(points,kind,t,6,safe,*size)
+        for p in points:
+            q = common.project_point(p,camera,target,*size,common.hero_fov_y(*size))
+            x,y = q['x']/size[0]+shift[0],q['y']/size[1]+shift[1]
+            assert safe[0]-1e-9 <= x <= safe[2]+1e-9
+            assert safe[1]-1e-9 <= y <= safe[3]+1e-9
+
+
+def test_surface_pin_skips_accessories_and_uses_body_center(render_module,monkeypatch):
+    import numpy as np
+    from types import SimpleNamespace as NS
+
+    class Vector(np.ndarray):
+        def __new__(cls,values):
+            return np.array(values,dtype=float).view(cls)
+        @property
+        def length(self):
+            return float(np.linalg.norm(self))
+        def normalized(self):
+            return self/self.length
+
+    class Object(dict):
+        type = 'MESH'
+        def as_pointer(self):
+            return id(self)
+
+    body,accessory = Object(anchor_body='cabin'),Object()
+    monkeypatch.setattr(render_module,'bounds',lambda objects,graph: (
+        (Vector((-2,-2,-2)),Vector((2,2,2))) if objects == [body]
+        else (Vector((-2,-2,-2)),Vector((2,2,20)))))
+    calls = []
+    hits = iter([(True,Vector((0,0,5)),None,None,accessory,None),
+                 (True,Vector((0,0,2)),None,None,body,None)])
+    def cast(graph,origin,direction,**kwargs):
+        calls.append((origin.copy(),direction.copy(),kwargs))
+        return next(hits)
+    scene = NS(camera=NS(matrix_world=NS(translation=Vector((0,0,10)))),ray_cast=cast)
+    pin = render_module.surface_pin(scene,None,[body,accessory])
+    assert tuple(pin) == (0,0,2)
+    assert tuple(calls[0][1]) == (0,0,-1)
+    assert calls[1][2]['distance'] < calls[0][2]['distance']
+    scene.ray_cast = lambda *args,**kwargs: (False,None,None,None,None,None)
+    assert tuple(render_module.surface_pin(scene,None,[body,accessory])) == (0,0,0)

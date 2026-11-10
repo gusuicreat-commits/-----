@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {routeLeader,splitLeaderSlots} from './layout.js';
+import {routeLeader,splitLeaderSlots,nearLeaderSlots} from './layout.js';
 export const clamp = (x,a=0,b=1) => Math.max(a,Math.min(b,x));
 export const ease = x => (x=clamp(x))<.5?4*x*x*x:1-(-2*x+2)**3/2;
 export const esc = s => String(s ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -45,16 +45,18 @@ export function projectBounds(ctx,bounds){
 }
 export function labelNodes(ctx,ids,{splitSides=false,safe,pointSource}={}){
  ctx.scene.updateMatrixWorld(true);ctx.camera.updateMatrixWorld();
- if(splitSides){
-  const center=new THREE.Box3().setFromObject(ctx.model.getObjectByName('crane')||ctx.model).getCenter(new THREE.Vector3());
+ if(splitSides||pointSource){
+  const center=pointSource?null:new THREE.Box3().setFromObject(ctx.model.getObjectByName('crane')||ctx.model).getCenter(new THREE.Vector3());
   const items=[...new Set(ids)].map(id=>{
    if(pointSource){const point=pointSource(id);return point?{id,...point}:null;}
    const node=ctx.model.getObjectByName(id);if(!node)return null;
    const anchor=partBounds(node).getCenter(new THREE.Vector3());
    return {id,left:anchor.x<center.x,...projectPoint(ctx,anchor)};
   }).filter(Boolean);
-  ctx.labels.innerHTML=splitLeaderSlots(items,safe).map(v=>{
+  const obstacles=pointSource?Object.keys(names).map(id=>{const p=pointSource(id);return p?{id,...p}:null;}).filter(Boolean):[];
+  ctx.labels.innerHTML=(pointSource?nearLeaderSlots(items,safe,obstacles):splitLeaderSlots(items,safe)).map(v=>{
    const {x,y}=v.label;
+   if(pointSource)v.points.reverse();
    return `<g data-part="${esc(v.id)}" data-side="${v.left?'left':'right'}"><path d="${v.points.map((p,j)=>`${j?'L':'M'} ${p.x} ${p.y}`).join(' ')}"/><circle cx="${v.x}" cy="${v.y}" r="5"/><rect x="${x}" y="${y}" width="210" height="50" rx="8"/><text x="${x+20}" y="${y+34}">${names[v.id]||esc(v.id)}</text></g>`;
   }).join('');
   return;
@@ -138,6 +140,7 @@ uniform float groundFadeFar;`);
 export function updateGround(ctx){
  const {camera,floor,scene}=ctx;
  floor.position.x=camera.position.x;floor.position.z=camera.position.z;
+ if(ctx.photoreal)return;
  const map=floor.material.map,extent=floor.geometry.parameters.width;
  map.offset.x+=floor.position.x/extent*map.repeat.x;
  map.offset.y-=floor.position.z/extent*map.repeat.y;
