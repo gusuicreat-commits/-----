@@ -248,7 +248,7 @@ def build_crane(dim: Dimensions, materials: dict[str, Any]) -> dict[str, Any]:
     for node,x in (("rail_left",-dim.span/2),("rail_right",dim.span/2)):
         g.box(node,(.6,.07,120),(x,.035,0),"metal")
         g.box(node,(.12,.16,120),(x,.15,0),"metal")
-        g.box(node,(.3,.07,120),(x,.265,0),"metal")
+        g.box(node,(.3,.07,120),(x,.265,0),"rail_top")
     g.finish()
     curve_hook(parents["hoist_hook"],dim,materials["metal"])
     bpy.context.view_layer.update()

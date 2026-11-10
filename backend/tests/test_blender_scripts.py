@@ -336,12 +336,12 @@ def test_scene_settings_match_supplied_api(monkeypatch, capsys):
     assert sky.sky_type == 'MULTIPLE_SCATTERING'
     # 保留 API 兼容检查，验证新版天空与远景渐隐。
     assert sky.aerosol_density == 2.0 and sky.ozone_density == 1.0 and sky.sun_disc
-    assert sky.sun_intensity == 1 and sky.sun_elevation == pytest.approx(math.radians(9))
+    assert sky.sun_intensity == 1 and sky.sun_elevation == pytest.approx(math.radians(13))
     assert sky.sun_rotation == pytest.approx(math.radians(35-65-90))
     assert sky.sun_size == pytest.approx(math.radians(.6))
     assert lights[0].energy == 1.6 and lights[0].use_shadow
     assert lights[0].angle == pytest.approx(math.radians(.6))
-    assert scene.world.node_tree.nodes['Background'].inputs['Strength'].default_value == .5
+    assert scene.world.node_tree.nodes['Background'].inputs['Strength'].default_value == .7
     assert not any(kind == 'ShaderNodeVolumePrincipled' for kind, _ in created)
     assert mats['glass'].node_tree.nodes['Principled BSDF'].inputs['Transmission Weight'].default_value == .92
     assert scene.view_settings.view_transform == 'AgX'
@@ -349,8 +349,8 @@ def test_scene_settings_match_supplied_api(monkeypatch, capsys):
     assert scene.view_settings.exposure == 0
     for name in ('concrete','seam'):
         fade = mats[name].node_tree.nodes['ShaderNodeMapRange']
-        assert fade.inputs['From Min'].default_value == 800
-        assert fade.inputs['From Max'].default_value == 1500
+        assert fade.inputs['From Min'].default_value == 500
+        assert fade.inputs['From Max'].default_value == 3000
         assert fade.clamp
     assert 'ShaderNodeEmission' not in mats['hull'].node_tree.nodes
     assert mats['hull'].node_tree.nodes['Principled BSDF'].inputs['Base Color'].default_value == (
@@ -381,10 +381,23 @@ def test_scene_settings_match_supplied_api(monkeypatch, capsys):
     water = next(call for call in geometry.box.call_args_list if call.args[0] == 'water')
     assert water.args[1] == (60,.05,200)
     assert water.args[2][2] == 0
-    ground = [call for call in geometry.box.call_args_list if call.args[0] == 'ground']
-    for z in (-1000,-101,101,1000):
-        assert any(abs(water.args[2][0]-c.args[2][0]) <= c.args[1][0]/2 and
-                   abs(z-c.args[2][2]) <= c.args[1][2]/2 for c in ground)
+    ground = next(call for call in geometry.mesh.call_args_list if call.args[0] == 'ground')
+    vertices = ground.args[2]
+    assert all(math.hypot(v[0],v[2]) == pytest.approx(8000) for v in vertices[1::2])
+    assert all(abs(v[0]-water.args[2][0]) == pytest.approx(30) or abs(v[2]) == pytest.approx(100)
+               for v in vertices[::2])
+    foundations = [c for c in geometry.box.call_args_list if c.args[0] == 'foundation']
+    assert len(foundations) == 2 and all(c.args[1][0] == 1.2 for c in foundations)
+    assert mats['rail_top'].node_tree.nodes['Principled BSDF'].inputs['Roughness'].default_value == .25
+    assert mats['rail_top'].node_tree.nodes['Principled BSDF'].inputs['Metallic'].default_value == 1
+    plates = [c for c in geometry.box.call_args_list if c.args[0] == 'steel_plates']
+    assert len(plates) == 18
+    assert all(c.args[1][0] == 12 and c.args[1][2] == 3 for c in plates)
+    factories = [c for c in geometry.box.call_args_list if c.args[3].startswith('warehouse_')]
+    assert len(factories) == 14
+    assert all(12 <= c.args[1][1]+3 <= 28 for c in factories)
+    assert all(250 <= math.hypot(c.args[2][0],c.args[2][2]) <= 600 for c in factories)
+
 
 
 @pytest.mark.parametrize('values', [{}, {'F_girder_length':120,'F_overall_height':65,'F_span':100}])
@@ -397,7 +410,7 @@ def test_hero_camera_fits_safe_frame_with_physical_lens(values, time_s, size):
     points = common.framing_points(dim)
     camera, target = common.hero_camera(dim,{},time_s,6,*size,points)
     assert camera[1] == 8
-    assert target == (0,dim.height*.45,0)
+    assert target[0] == target[2] == 0
     assert math.degrees(math.atan2(camera[0],camera[2])) == pytest.approx(
         23+24*common.ease(time_s/6))
     assert target[1] > camera[1]
@@ -412,14 +425,15 @@ def test_hero_camera_fits_safe_frame_with_physical_lens(values, time_s, size):
     screen_x = .5 + view[:,0]/view[:,2]*30/36
     screen_y = .5 - view[:,1]/view[:,2]*30/36*size[0]/size[1]
     assert screen_x.max()-screen_x.min() <= .82+1e-9
-    assert screen_y.max()-screen_y.min() <= .80+1e-9
+    assert screen_y.max()-screen_y.min() <= .78+1e-9
+    assert .82 <= screen_y.max() <= .86
+    assert screen_y.max() == pytest.approx(.84)
     assert min(screen_x.min(),screen_y.min()) >= .06-1e-9
     assert max(screen_x.max(),screen_y.max()) <= .94+1e-9
-    # 最近距离必须有至少一个约束达到边界。
+    # 最近距离至少触及一个宽度或上沿约束，竖直构图优先。
     assert max((screen_x.max()-screen_x.min())/.82,
-               (screen_y.max()-screen_y.min())/.8,
                (.5-screen_x.min())/.44,(screen_x.max()-.5)/.44,
-               (.5-screen_y.min())/.44,(screen_y.max()-.5)/.44) == pytest.approx(1)
+               (.84-screen_y.min())/.78) == pytest.approx(1)
     projected_y = [common.project_point(p,camera,target,*size,common.hero_fov_y(*size))['y'] for p in points]
     assert projected_y == pytest.approx(screen_y*size[1])
     projected = [common.project_point(p,camera,target,*size,common.hero_fov_y(*size)) for p in points]
@@ -577,3 +591,166 @@ def test_meter_uses_display_transform_and_restores_scene(render_module, monkeypa
     assert scene.cycles.samples == scene.eevee.taa_render_samples == 64
     assert scene.cycles.use_adaptive_sampling
     assert not subject.hide_render and not background.hide_render and hidden.hide_render
+
+
+@pytest.mark.parametrize('size,expected', [((1920,1080),(1120,380)),
+    ((960,540),(560,190)), ((1080,1920),(700,800))])
+def test_auto_sensor_known_pinhole_projection(size, expected):
+    projection = common.project_point((1,1,0),(0,0,10),(0,0,0),*size,common.hero_fov_y(*size))
+    assert (projection['x'],projection['y']) == pytest.approx(expected)
+    assert projection['in_frame']
+    assert not common.project_point((0,0,11),(0,0,10),(0,0,0),*size,
+                                    common.hero_fov_y(*size))['in_frame']
+
+
+@pytest.mark.parametrize('values', [[0,.2,.1,-.1,0], [0,8,-4,6,2]])
+def test_animation_exposure_has_no_overshoot_or_frame_jumps(values):
+    samples = [(i*1.5,v) for i,v in enumerate(values)]
+    curve = common.exposure_curve(samples,30)
+    assert all(ev <= raw for (_,ev),raw in zip(curve,values))
+    frames = [common.interpolate_exposure(curve,t) for t in common.frame_times(6,30)]
+    assert len(frames) == 180
+    assert max(abs(b-a) for a,b in zip(frames,frames[1:])) <= .02+1e-12
+    for t,ev in curve:
+        assert common.interpolate_exposure(curve,t) == pytest.approx(ev)
+    if max(values)-min(values) < .9:
+        assert curve == samples
+
+
+@pytest.mark.parametrize('engine,samples', [('eevee',32),('cycles',64)])
+def test_preview_halves_resolution_and_only_realtime_samples(render_module, engine, samples):
+    args = render_module.arguments(['--facts','f.json','--shot-json','{}','--out','frames',
+                                    '--preview','--engine',engine])
+    assert (args.width,args.height,args.samples) == (960,540,samples)
+
+
+def test_video_command_overrides_executable_and_limits_frame_count(render_module, monkeypatch, tmp_path):
+    from types import SimpleNamespace as NS
+    monkeypatch.setenv('KEPU_FFMPEG','/自定义工具/encoder')
+    monkeypatch.setattr(render_module.shutil,'which',lambda path: path)
+    calls = []
+    def run(command, **kwargs):
+        calls.append(command)
+        assert kwargs == {'capture_output':True,'text':True,'check':False}
+        (tmp_path/'orbit.mp4').touch()
+        return NS(returncode=0,stderr='')
+    monkeypatch.setattr(render_module.subprocess,'run',run)
+    result = render_module.compose_video(tmp_path,30,180)
+    assert result['status'] == 'ok'
+    command = calls[0]
+    assert command[0] == '/自定义工具/encoder'
+    for key,value in [('-framerate','30'),('-start_number','1'),('-frames:v','180'),
+                      ('-c:v','libx264'),('-pix_fmt','yuv420p'),('-crf','18')]:
+        assert command[command.index(key)+1] == value
+    assert str(tmp_path/'frame_%05d.png') in command
+
+
+def test_video_missing_tool_skips_and_encoder_failure_is_reported(render_module, monkeypatch, tmp_path, capsys):
+    from types import SimpleNamespace as NS
+    monkeypatch.setattr(render_module.shutil,'which',lambda path: None)
+    assert render_module.compose_video(tmp_path,30,180)['status'] == 'skipped'
+    assert '提示：未找到' in capsys.readouterr().out
+    monkeypatch.setattr(render_module.shutil,'which',lambda path: '/encoder')
+    monkeypatch.setattr(render_module.subprocess,'run',lambda *a,**kw: NS(returncode=1,stderr='模拟编码失败'))
+    with pytest.raises(RuntimeError,match='视频合成失败.*模拟编码失败'):
+        render_module.compose_video(tmp_path,30,180)
+
+
+def test_anchors_use_runtime_projection_and_only_frame_visibility(render_module, monkeypatch):
+    from types import SimpleNamespace as NS
+    import numpy as np
+    class Vector(np.ndarray):
+        def __new__(cls, values):
+            return np.asarray(values,dtype=float).view(cls)
+        x = property(lambda self: float(self[0]))
+        y = property(lambda self: float(self[1]))
+        z = property(lambda self: float(self[2]))
+    scene = NS(render=NS(resolution_x=960,resolution_y=540,resolution_percentage=100),camera=object())
+    monkeypatch.setitem(sys.modules,'bpy',NS(context=NS(evaluated_depsgraph_get=lambda: 'graph')))
+    monkeypatch.setattr(render_module,'part_objects',lambda parent: [parent])
+    monkeypatch.setattr(render_module,'bounds',lambda objects,graph: (Vector((2,4,6)),Vector((4,6,8))))
+    projections = iter([(0.25,.75,10),(-.1,.5,10),(.5,.5,-1),(0,1,10),(.5,.5,0),(1.1,.5,10)])
+    centers = []
+    def project(actual_scene, camera, center):
+        assert actual_scene is scene and camera is scene.camera
+        centers.append(tuple(center))
+        return NS(**dict(zip('xyz',next(projections))))
+    monkeypatch.setitem(sys.modules,'bpy_extras.object_utils',NS(world_to_camera_view=project))
+    result = render_module.anchors(scene,{name:name for name in common.ANCHOR_NODES})
+    assert centers == [(3,5,7)]*6
+    assert result['girder'] == {'x':240,'y':135,'visible':True,'in_frame':True,'center_m':(3,7,-5)}
+    assert [result[name]['visible'] for name in common.ANCHOR_NODES] == [True,False,False,True,False,False]
+    assert result['hoist_hook']['x'] is None
+
+
+@pytest.mark.parametrize('options,count,video', [([],180,True),
+    (['--stills','0.5,3,5.5','--preview'],3,False),(['--still-at','3'],1,False)])
+def test_render_orchestration_meters_five_times_and_exports_all_frames(
+        render_module, monkeypatch, tmp_path, capsys, options, count, video):
+    from types import SimpleNamespace as NS
+    import numpy as np
+    class Vector(np.ndarray):
+        def __new__(cls, values):
+            return np.asarray(values,dtype=float).view(cls)
+        x = property(lambda self: float(self[0]))
+        y = property(lambda self: float(self[1]))
+        z = property(lambda self: float(self[2]))
+        def to_track_quat(self, *args):
+            return NS(to_euler=lambda: tuple(self))
+    class Identity:
+        def __matmul__(self, value):
+            return value
+    camera = NS()
+    settings = NS()
+    scene = NS(render=NS(image_settings=settings), view_settings=NS(exposure=0), frame_set=lambda _: None)
+    dim = common.derive_dimensions({})
+    obj = NS(matrix_world=Identity(),bound_box=[common.to_blender(p) for p in common.framing_points(dim)])
+    obj.evaluated_get = lambda graph: obj
+    rendered = []
+    def render(**kwargs):
+        assert kwargs == {'write_still':True}
+        rendered.append(scene.view_settings.exposure)
+        from pathlib import Path
+        Path(scene.render.filepath).write_bytes(b'frame')
+    fake = NS(context=NS(scene=scene,view_layer=NS(update=lambda:None),
+                        evaluated_depsgraph_get=lambda:None,collection=NS(objects=NS(link=lambda _:None))),
+              data=NS(cameras=NS(new=lambda _:NS()),objects=NS(new=lambda *a:camera)),
+              ops=NS(object=NS(select_all=lambda **kw:None,delete=lambda **kw:None),render=NS(render=render)))
+    monkeypatch.setitem(sys.modules,'bpy',fake)
+    monkeypatch.setitem(sys.modules,'mathutils',NS(Vector=Vector))
+    monkeypatch.setitem(sys.modules,'crane',NS(build_crane=lambda *a:{n:obj for n in common.NODES}))
+    monkeypatch.setitem(sys.modules,'scene',NS(environment=lambda *a:None,materials=lambda:{}))
+    monkeypatch.setattr(render_module,'part_objects',lambda parent:[parent])
+    monkeypatch.setattr(render_module,'bounds',lambda *a:(Vector((-dim.length/2,-60,0)),Vector((dim.length/2,60,dim.height))))
+    monkeypatch.setattr(render_module,'read_facts',lambda _: {})
+    monkeypatch.setattr(render_module,'configure_engine',lambda *a:{'warnings':[],'device':'模拟设备'})
+    meters = []
+    def meter(*args):
+        meters.append(tuple(camera.location))
+        return {'exposure':[0,.2,.1,-.1,0][len(meters)-1],'median':.42,'p98':.8}
+    monkeypatch.setattr(render_module,'meter_exposure',meter)
+    monkeypatch.setattr(render_module,'anchors',lambda *a:{n:{'x':1,'y':2,'visible':True} for n in common.ANCHOR_NODES})
+    encoded = []
+    monkeypatch.setattr(render_module,'compose_video',lambda *a:encoded.append(a) or {'status':'ok'})
+    render_module.main(['--facts','facts.json','--shot-json','{"kind":"model_orbit"}',
+                        '--out',str(tmp_path),*options])
+    payload = json.loads((tmp_path/'anchors.json').read_text())
+    report = json.loads((tmp_path/'render_eevee.json').read_text())
+    assert len(meters) == 5
+    assert [m['time_s'] for m in report['metering_frames']] == [0,1.5,3,4.5,6]
+    assert len(payload['frames']) == len(report['camera_frames']) == len(rendered) == count
+    assert all((tmp_path/f['file']).is_file() and len(f['nodes']) == 6 for f in payload['frames'])
+    assert [f['exposure'] for f in payload['frames']] == rendered
+    assert all(f['projected_bounds_px']['bottom']/report['resolution'][1] == pytest.approx(.84)
+               for f in report['camera_frames'])
+    assert bool(encoded) is video
+    if video:
+        assert encoded == [(tmp_path,30,180)]
+        assert payload['frames'][0]['file'] == 'frame_00001.png'
+        assert payload['frames'][-1]['file'] == 'frame_00180.png'
+        assert payload['frames'][-1]['time_s'] == 179/30
+        assert max(abs(b-a) for a,b in zip(rendered,rendered[1:])) <= .02
+        progress = [line for line in capsys.readouterr().out.splitlines() if '预计剩余' in line]
+        assert len(progress) == 18 and '第 180/180 帧' in progress[-1]
+    if '--preview' in options:
+        assert (payload['width'],payload['height']) == (960,540)

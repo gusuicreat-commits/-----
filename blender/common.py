@@ -175,7 +175,7 @@ def frame_times(duration: float, fps: int) -> list[float]:
 
 def project_point(point: Vec3, camera: Vec3, target: Vec3, width: int, height: int,
                   fov_y_deg: float = FOV_DEG) -> dict[str, Any]:
-    """契约坐标下的透视投影；可见性在入口中另加场景遮挡判断。"""
+    """契约坐标下的针孔投影；只判断画幅和相机正面。"""
     def unit(v: Vec3) -> Vec3:
         length = math.sqrt(sum(x * x for x in v))
         return tuple(x / length for x in v)
@@ -195,10 +195,10 @@ def project_point(point: Vec3, camera: Vec3, target: Vec3, width: int, height: i
 
 
 def hero_fov_y(width: int, height: int) -> float:
-    """固定水平传感器，锚点与相机共用同一镜头视角。"""
+    """方形像素、sensor_fit AUTO；竖幅按传感器宽度适配画高。"""
     if width <= 0 or height <= 0:
         raise ValueError("分辨率必须大于零")
-    return math.degrees(2 * math.atan(HERO_SENSOR_MM / (2 * HERO_LENS_MM) * height / width))
+    return math.degrees(2 * math.atan(HERO_SENSOR_MM / (2 * HERO_LENS_MM) * height / max(width, height)))
 
 
 def hero_azimuth(params: Mapping[str, Any], time_s: float, duration: float) -> float:
@@ -230,29 +230,35 @@ def enclosing_corners(points: list[Vec3]) -> list[Vec3]:
 def hero_camera(dim: Dimensions, params: Mapping[str, Any], time_s: float, duration: float,
                 width: int = 1920, height: int = 1080,
                 points: list[Vec3] | None = None) -> tuple[Vec3, Vec3]:
-    """8 m 机位、30 mm 镜头；二分求解满足画宽、画高及四边安全留白的最近距离。"""
+    """固定下沿 84%，联合求解俯仰与距离；上沿和侧边至少留白 6%。"""
     angle = math.radians(hero_azimuth(params, time_s, duration))
-    target = (0.0, dim.height * .45, 0.0)
     points = framing_points(dim) if points is None else points
     if not points or not all(math.isfinite(v) for p in points for v in p):
         raise ValueError("取景轮廓必须包含有限坐标")
     points = enclosing_corners(points)
     fov = hero_fov_y(width, height)
+    bottom_angle = math.atan(.68 * math.tan(math.radians(fov / 2)))
 
-    def camera_at(distance: float) -> Vec3:
-        return (math.sin(angle)*distance, 8.0, math.cos(angle)*distance)
+    def pose(distance: float) -> tuple[Vec3, Vec3]:
+        camera = (math.sin(angle)*distance, 8.0, math.cos(angle)*distance)
+        # 局部垂直平面中的俯仰角；最低投影角点决定下沿。
+        pitch = min(math.atan2(p[1]-8, distance-p[0]*math.sin(angle)-p[2]*math.cos(angle))
+                    for p in points) + bottom_angle
+        return camera, (0.0, 8 + distance*math.tan(pitch), 0.0)
 
     def coverage(distance: float) -> float:
-        projected = [project_point(p, camera_at(distance), target, width, height, fov) for p in points]
+        camera, target = pose(distance)
+        projected = [project_point(p, camera, target, width, height, fov) for p in points]
         if any(p["depth_m"] <= .01 for p in projected):
             return math.inf
         xs = [p["x"]/width for p in projected]
         ys = [p["y"]/height for p in projected]
-        return max((max(xs)-min(xs))/.82, (max(ys)-min(ys))/.80,
-                   (.5-min(xs))/.44, (max(xs)-.5)/.44,
-                   (.5-min(ys))/.44, (max(ys)-.5)/.44)
+        return max((max(xs)-min(xs))/.82,
+                   (.5-min(xs))/.44, (max(xs)-.5)/.44, (.84-min(ys))/.78)
 
-    low, high = .01, max(dim.length, dim.height)
+    low = max(p[0]*math.sin(angle)+p[2]*math.cos(angle) for p in points) + .02
+    low = max(.02, low)
+    high = max(low*2, dim.length, dim.height)
     for _ in range(32):
         if coverage(high) <= 1:
             break
@@ -265,7 +271,30 @@ def hero_camera(dim: Dimensions, params: Mapping[str, Any], time_s: float, durat
             low = mid
         else:
             high = mid
-    return camera_at(high), target
+    return pose(high)
+
+
+def exposure_curve(samples: list[tuple[float, float]], fps: int,
+                   max_step: float = .02) -> list[tuple[float, float]]:
+    """五点曝光的保守限速包络；只降低过亮点，保持高光约束。"""
+    if fps <= 0 or max_step <= 0 or len(samples) < 2:
+        raise ValueError("曝光曲线需要至少两个点及正帧率、步长")
+    if any(not math.isfinite(v) for sample in samples for v in sample):
+        raise ValueError("测光时刻和曝光必须有限")
+    if any(b[0] <= a[0] for a,b in zip(samples,samples[1:])):
+        raise ValueError("测光时刻必须严格递增")
+    rate = max_step*fps
+    return [(t, min(ev+rate*abs(t-ts) for ts,ev in samples)) for t,_ in samples]
+
+
+def interpolate_exposure(samples: list[tuple[float, float]], time_s: float) -> float:
+    """分段线性插值，无过冲；动画末帧也使用同一曲线。"""
+    if time_s <= samples[0][0]:
+        return samples[0][1]
+    for (a, x), (b, y) in zip(samples, samples[1:]):
+        if time_s <= b:
+            return x+(y-x)*(time_s-a)/(b-a)
+    return samples[-1][1]
 
 
 def display_luminance(pixels: list[float]) -> dict[str, float | int]:
