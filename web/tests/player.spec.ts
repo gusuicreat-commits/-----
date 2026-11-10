@@ -138,6 +138,43 @@ test('创意粒子画布位于文字层下方',async({page})=>{
 });
 
 function rectanglesOverlap(a,b){return a.x<b.x+b.width&&a.x+a.width>b.x&&a.y<b.y+b.height&&a.y+a.height>b.y;}
+function pathSegments(d:string){
+ const tokens=d.match(/[MLHVmlhv]|[-+]?(?:\d*\.)?\d+(?:e[-+]?\d+)?/g)||[];
+ const result:any[]= [];let p={x:0,y:0};
+ while(tokens.length){
+  const command=tokens.shift()!,relative=command===command.toLowerCase(),type=command.toUpperCase();
+  const q={...p};
+  if(type==='M'||type==='L'){q.x=Number(tokens.shift())+(relative?p.x:0);q.y=Number(tokens.shift())+(relative?p.y:0);}
+  else if(type==='H')q.x=Number(tokens.shift())+(relative?p.x:0);
+  else if(type==='V')q.y=Number(tokens.shift())+(relative?p.y:0);
+  else throw new Error('测试遇到未支持的尺寸线命令');
+  if(type!=='M')result.push([p,q]);p=q;
+ }
+ return result;
+}
+function lineTouchesRect(a,b,r){
+ const inside=p=>p.x>=r.x&&p.x<=r.x+r.width&&p.y>=r.y&&p.y<=r.y+r.height;
+ if(inside(a)||inside(b))return true;
+ for(const x of [r.x,r.x+r.width]){
+  const t=(x-a.x)/(b.x-a.x),y=a.y+t*(b.y-a.y);
+  if(t>=0&&t<=1&&y>=r.y&&y<=r.y+r.height)return true;
+ }
+ for(const y of [r.y,r.y+r.height]){
+  const t=(y-a.y)/(b.y-a.y),x=a.x+t*(b.x-a.x);
+  if(t>=0&&t<=1&&x>=r.x&&x<=r.x+r.width)return true;
+ }
+ return false;
+}
+async function assertDimensionClearance(page){
+ const paths=await page.locator('#labels .dimension path').evaluateAll(nodes=>nodes.map(n=>n.getAttribute('d')!));
+ const stage=(await page.locator('#stage').boundingBox())!,scale=stage.width/1920;
+ const segments=paths.flatMap(pathSegments);
+ for(const label of await page.locator('.dimension-label').all()){
+  const box=(await label.boundingBox())!,rect={x:(box.x-stage.x)/scale,y:(box.y-stage.y)/scale,width:box.width/scale,height:box.height/scale};
+  for(const [a,b] of segments)expect(lineTouchesRect(a,b,rect),`标签与尺寸线相交：${await label.textContent()}`).toBe(false);
+ }
+ return paths.map(d=>pathSegments(d)[0]);
+}
 function projectedMeshArea(ctx,mesh){
  mesh.updateWorldMatrix(true,false);
  const positions=mesh.geometry.attributes.position,index=mesh.geometry.index;
@@ -193,13 +230,16 @@ test('类比HTML标签清晰且高度标签在左右两侧不相交',async({page
   await page.goto('/player/index.html?timeline=/fixtures/label-variant.json&mode=render');await page.waitForFunction(()=>!!window.__player);await page.evaluate(()=>window.__player.ready);
   for(const t of [11,12.5,14.8]){
    await page.evaluate(t=>window.__player.seek(t),t);
+   const lines=await assertDimensionClearance(page);
+   if(height)expect(Math.abs(lines[0][0].y-lines[1][0].y)).toBeLessThan(4);
+   await expect(page.locator('#numbers .number-card')).toHaveCount(0);
    const labels=page.locator('.dimension-label');await expect(labels).toHaveCount(2);
    const a=await labels.nth(0).boundingBox(),b=await labels.nth(1).boundingBox();expect(rectanglesOverlap(a,b)).toBe(false);
    const stage=await page.locator('#stage').boundingBox();
    for(const box of [a!,b!]){expect(box.x).toBeGreaterThanOrEqual(stage!.x);expect(box.x+box.width).toBeLessThanOrEqual(stage!.x+stage!.width);}
    for(const label of [labels.nth(0),labels.nth(1)]){
     await expect(label).toHaveCSS('font-size','22px');await expect(label).toHaveCSS('color','rgb(255, 255, 255)');
-    await expect(label).toHaveCSS('background-color',/^rgba\(17, 26, 36, 0\.90?2?\)$/);await expect(label).toHaveCSS('border-left-width','4px');
+    await expect(label).toHaveCSS('background-color','rgb(17, 26, 36)');await expect(label).toHaveCSS('border-left-width','4px');
    }
    if(height){
     const left=await page.locator('.dimension-label.left').boundingBox(),right=await page.locator('.dimension-label.right').boundingBox();
@@ -281,10 +321,108 @@ test('焊缝文字参数卡与模型及尺寸标签在双分辨率下互不重�
     expect(rectanglesOverlap(text,{x:stage.x+p.left*stage.width,y:stage.y+p.top*stage.height,width:(p.right-p.left)*stage.width,height:(p.bottom-p.top)*stage.height})).toBe(false);
    }
    const card=await page.locator('#numbers').boundingBox();
-   for(const label of await page.locator('#labels text').all()){
+   await expect(page.locator('#labels .label-background')).toHaveCount(4);
+   for(const text of await page.locator('#labels text').all())await expect(text).toHaveCSS('fill','rgb(255, 255, 255)');
+   for(const label of await page.locator('#labels .label-background').all()){
+    await expect(label).toHaveCSS('fill','rgb(17, 26, 36)');
     const rect=(await label.boundingBox())!;expect(rectanglesOverlap(card!,rect)).toBe(false);expect(rectanglesOverlap(text,rect)).toBe(false);
     expect(rect.y+rect.height).toBeLessThan(stage.y+stage.height*.82);
    }
   }
  }
+});
+
+test('实拍标题去前缀不折词且署名紧邻字幕上方',async({page})=>{
+ for(const viewport of [{width:1920,height:1080},{width:1366,height:768}]){
+  await page.setViewportSize(viewport);
+  for(const caption of [fixture.shots.find(s=>s.kind==='real_media').params.caption,'',`参考实拍 · 非本机：${'造船厂门式起重机，'.repeat(12)}`]){
+   const data=structuredClone(fixture);data.shots.find(s=>s.kind==='real_media').params.caption=caption;
+   await page.route('**/media-layout.json',route=>route.fulfill({json:data}));
+   await page.goto('/player/index.html?timeline=/fixtures/media-layout.json&mode=render');await page.waitForFunction(()=>!!window.__player);await page.evaluate(()=>window.__player.ready);
+   for(const t of [30,32.5,34.9]){
+    await page.evaluate(t=>window.__player.seek(t),t);
+    const title=page.locator('.media-copy');await expect(title).not.toContainText('参考实拍');await expect(title).not.toContainText('非本机');
+    const metrics=await title.evaluate((el:HTMLElement)=>({width:el.clientWidth,scroll:el.scrollWidth,height:el.clientHeight,line:parseFloat(getComputedStyle(el).lineHeight),size:parseFloat(getComputedStyle(el).fontSize)}));
+    expect(metrics.width).toBeGreaterThanOrEqual(900);expect(metrics.scroll).toBeLessThanOrEqual(metrics.width);expect(metrics.height-32).toBeLessThanOrEqual(metrics.line+1);
+    if(caption.length>100)expect(metrics.size).toBeLessThan(44);
+    else await expect(title).toHaveText('造船厂门式起重机');
+    await expect(title).toHaveCSS('word-break','keep-all');await expect(title).toHaveCSS('line-break','strict');await expect(title).toHaveCSS('background-image',/linear-gradient/);
+    const stage=(await page.locator('#stage').boundingBox())!,credit=(await page.locator('#credit').boundingBox())!,scale=stage.width/1920;
+    expect(credit.width).toBeLessThanOrEqual(stage.width*.6+.1);await expect(page.locator('#credit')).toHaveCSS('font-size','14px');await expect(page.locator('#credit')).toHaveCSS('text-overflow','ellipsis');
+    if(t===32.5){const subtitle=(await page.locator('#caption').boundingBox())!;expect(Math.abs((subtitle.y-credit.y-credit.height)/scale-12)).toBeLessThan(1);}
+    const transform=await page.locator('#media img').evaluate(el=>{const m=new DOMMatrix(getComputedStyle(el).transform);return {scale:m.a,x:m.e,y:m.f};});
+    expect(transform.scale).toBeCloseTo(1+.08*(t-30)/5,5);expect(transform.x).toBe(0);expect(transform.y).toBe(0);
+   }
+   await page.unroute('**/media-layout.json');
+  }
+ }
+});
+test('参数面板与类比镜头不再重复显示数字卡且切镜恢复',async({page})=>{
+ await ready(page);
+ for(const t of [27.5,12.5,27.5]){await page.evaluate(t=>window.__player.seek(t),t);await expect(page.locator('#numbers .number-card')).toHaveCount(0);}
+ await expect(page.locator('.data-panel .data-card')).toHaveCount(3);
+ await page.evaluate(()=>window.__player.seek(7.5));await expect(page.locator('#numbers .number-card')).toHaveCount(1);
+});
+test('类比尺寸新排版的所有线段与标签、小车投影分离',async()=>{
+ const module=await import('../player/shots/analogy.js');
+ for(const ref of ['football_field','boeing747','bus','building_floor','person']){
+  const ctx=await geometryContext(),height=['building_floor','person'].includes(ref),size={football_field:105,boeing747:64.4,bus:12,building_floor:3,person:1.75}[ref]!;
+  ctx.timeline.analogies.variant={ref,axis:height?'height':'length',ref_size:size,ref_unit:'m',ref_size_m:size,ratio:(height?51:104)/size,fact:height?'F_overall_height':'F_girder_length',text:'真实尺度对照'};
+  const shot={id:'variant',params:{analogy:'variant'}};module.setup(ctx,shot);
+  for(const width of [220,340]){
+   const nodes=[0,1].map(()=>({offsetWidth:width,offsetHeight:36,style:{}}));
+   (ctx.content as any).querySelectorAll=()=>nodes;module.render(ctx,shot,2.5,5);
+   const paths=[...ctx.labels.innerHTML.matchAll(/<path d="([^"]+)"/g)].map(m=>pathSegments(m[1]));
+   const trolley=projectedBounds(ctx,new ctx.THREE.Box3().setFromObject(ctx.model.getObjectByName('trolley')));
+   const obstacle={x:trolley.left*1920,y:trolley.top*1080,width:(trolley.right-trolley.left)*1920,height:(trolley.bottom-trolley.top)*1080};
+   const rects=nodes.map(n=>({x:parseFloat((n.style as any).left),y:parseFloat((n.style as any).top),width:n.offsetWidth,height:n.offsetHeight}));
+   for(const rect of rects){
+    expect(rect.y).toBeGreaterThan(80);expect(rect.y+rect.height).toBeLessThan(900);
+    expect(rectanglesOverlap(rect,obstacle)).toBe(false);
+    for(const [a,b] of paths.flat())expect(lineTouchesRect(a,b,rect)).toBe(false);
+   }
+   expect(rectanglesOverlap(rects[0],rects[1])).toBe(false);
+   if(height)expect(Math.abs(paths[0][0][0].y-paths[1][0][0].y)).toBeLessThan(4);
+  }
+ }
+});
+test('高度类比与零地面对齐且顶端包含小车外包',async()=>{
+ const ctx=await geometryContext(),module=await import('../player/shots/analogy.js');
+ // 模型底部偏离原点时，尺寸线仍必须从契约地面 y=0 起算。
+ ctx.model.getObjectByName('crane').position.y=2;
+ ctx.model.getObjectByName('trolley').position.y+=5;
+ ctx.timeline.analogies.height={ref:'building_floor',axis:'height',ref_size:3,ref_unit:'m',ref_size_m:3,ratio:17,fact:'F_overall_height',text:'真实尺度对照'};
+ const shot={id:'height',params:{analogy:'height'}};module.setup(ctx,shot);module.render(ctx,shot,2.5,5);
+ const crane=new ctx.THREE.Box3().setFromObject(ctx.model.getObjectByName('crane')),ref=new ctx.THREE.Box3().setFromObject(ctx.groups.get('height').userData.ref);
+ expect(ref.min.y).toBeCloseTo(0,7);expect(crane.min.y).toBeCloseTo(2,7);
+ const lines=[...ctx.labels.innerHTML.matchAll(/<path d="([^"]+)"/g)].map(m=>pathSegments(m[1])[0]);
+ const z=Math.max(crane.max.z,ref.max.z),ys=[0,crane.max.y,ref.max.y].map(y=>(1-new ctx.THREE.Vector3(0,y,z).project(ctx.camera).y)*540);
+ expect(lines[0][0].y).toBeCloseTo(ys[0],5);expect(lines[1][0].y).toBeCloseTo(ys[0],5);
+ expect(lines[0][1].y).toBeCloseTo(ys[1],5);expect(lines[1][1].y).toBeCloseTo(ys[2],5);
+});
+test('GLB节点爆炸引线锚定小车本体且右侧槽位按高度排序',async()=>{
+ const ctx=await geometryContext(),module=await import('../player/shots/exploded.js');
+ const shot=fixture.shots.find(s=>s.kind==='exploded');
+ for(const t of [0,1,2.5,4.9]){
+  for(const o of ctx.originals)o.n.position.copy(o.p);
+  module.render(ctx,shot,t,5);
+  const labels=[...ctx.labels.innerHTML.matchAll(/data-part="([^"]+)"[\s\S]*?<circle cx="([^"]+)" cy="([^"]+)"[\s\S]*?<rect x="([^"]+)" y="([^"]+)"/g)];
+  expect(labels).toHaveLength(4);
+  for(let i=0;i<labels.length;i++){
+   const [,id,x,y,labelX,labelY]=labels[i],node=ctx.model.getObjectByName(id);
+   // 小车本体单独命名，不把吊钩和绳索纳入期望锚点。
+   const target=id==='trolley'?node.getObjectByName('trolley_body'):node;
+   const center=new ctx.THREE.Box3().setFromObject(target).getCenter(new ctx.THREE.Vector3()).project(ctx.camera);
+   expect(Number(x)).toBeCloseTo((center.x+1)*960,5);expect(Number(y)).toBeCloseTo((1-center.y)*540,5);expect(Number(labelX)).toBe(1590);
+   if(i){expect(Number(y)).toBeGreaterThanOrEqual(Number(labels[i-1][3]));expect(Number(labelY)).toBeGreaterThan(Number(labels[i-1][5]));}
+  }
+ }
+});
+test('GLB节点引线绕开其他部件矩形且避线算法处理斜线',async()=>{
+ const {routeLeader,segmentIntersectsRect}=await import('../player/shots/layout.js');
+ const obstacle={x:300,y:200,width:200,height:200},start={x:100,y:300},end={x:800,y:300};
+ const route=routeLeader(start,end,[obstacle]);expect(route.length).toBeGreaterThan(2);expect(route[0]).toEqual(start);expect(route.at(-1)).toEqual(end);
+ for(let i=1;i<route.length;i++)expect(lineTouchesRect(route[i-1],route[i],obstacle)).toBe(false);
+ expect(segmentIntersectsRect({x:0,y:0},{x:600,y:600},obstacle)).toBe(true);
+ expect(segmentIntersectsRect({x:0,y:0},{x:200,y:600},obstacle)).toBe(false);
 });

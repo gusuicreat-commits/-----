@@ -180,7 +180,11 @@
       "params": {
         "analogy": "A_length"
       },
-      "text_overlays": []
+      "text_overlays": [
+        {
+          "fact": "F_girder_length"
+        }
+      ]
     },
     {
       "id": "S04",
@@ -226,7 +230,17 @@
           "F_overall_height"
         ]
       },
-      "text_overlays": []
+      "text_overlays": [
+        {
+          "fact": "F_rated_load"
+        },
+        {
+          "fact": "F_span"
+        },
+        {
+          "fact": "F_overall_height"
+        }
+      ]
     },
     {
       "id": "S07",
@@ -237,7 +251,7 @@
       "params": {
         "asset": "IMG_01",
         "effect": "kenburns",
-        "caption": "真实船厂，真实尺度"
+        "caption": "参考实拍（非本机）：造船厂门式起重机"
       },
       "text_overlays": []
     },
@@ -263,7 +277,11 @@
         "fact": "F_weld_tolerance",
         "analogy": "A_weld"
       },
-      "text_overlays": []
+      "text_overlays": [
+        {
+          "fact": "F_weld_tolerance"
+        }
+      ]
     },
     {
       "id": "S10",
@@ -305,7 +323,8 @@
       "url": "/fixtures/port.jpg",
       "kind": "image",
       "provenance": "reference",
-      "credit": "Hannah Forey / CC BY-SA 4.0 / https://commons.wikimedia.org/wiki/File:Ballymacarrett_-_Goliath_%26_Samson_cranes_at_Harland_And_Wolff_-_20240908093337.jpg"
+      "credit": "Hannah Forey / CC BY-SA 4.0 / https://commons.wikimedia.org/wiki/File:Ballymacarrett_-_Goliath_%26_Samson_cranes_at_Harland_And_Wolff_-_20240908093337.jpg",
+      "title": "（非本机）参考实拍：造船厂门式起重机"
     },
     "IMG_02": {
       "url": "/fixtures/girder.jpg",

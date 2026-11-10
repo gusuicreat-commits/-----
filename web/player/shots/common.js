@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {routeLeader} from './layout.js';
 export const clamp = (x,a=0,b=1) => Math.max(a,Math.min(b,x));
 export const ease = x => (x=clamp(x))<.5?4*x*x*x:1-(-2*x+2)**3/2;
 export const esc = s => String(s ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -11,10 +12,43 @@ export function orbit(ctx,angle=20,elevation=18,distance=1.2,target=ctx.center){
 }
 export function mesh(geometry,color,metalness=.35){return new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({color,metalness,roughness:.4}));}
 export function box(group,w,h,d,x,y,z,color){const m=mesh(new THREE.BoxGeometry(w,h,d),color);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;group.add(m);return m;}
-export function labelNodes(ctx,ids){
+export function partBounds(node){
+ const bounds=new THREE.Box3();
+ node.updateWorldMatrix(true,true);
+ const visit=n=>{
+  // 吊钩、绳索等独立运动部件不计入小车本体的锚点。
+  if(n!==node&&(names[n.name]||['rope','rail_left','rail_right'].includes(n.name)))return;
+  if(n.isMesh){n.geometry.computeBoundingBox();bounds.union(n.geometry.boundingBox.clone().applyMatrix4(n.matrixWorld));}
+  for(const child of n.children)visit(child);
+ };
+ visit(node);return bounds.isEmpty()?new THREE.Box3().setFromObject(node):bounds;
+}
+export function projectPoint(ctx,point){const p=point.clone().project(ctx.camera);return {x:(p.x+1)*960,y:(1-p.y)*540};}
+export function projectBounds(ctx,bounds){
+ const points=boundsCorners(bounds).map(p=>projectPoint(ctx,p));
+ const x=Math.min(...points.map(p=>p.x)),y=Math.min(...points.map(p=>p.y));
+ return {x,y,width:Math.max(...points.map(p=>p.x))-x,height:Math.max(...points.map(p=>p.y))-y};
+}
+export function labelNodes(ctx,ids,{rightSide=false}={}){
  ctx.scene.updateMatrixWorld(true);ctx.camera.updateMatrixWorld();
- const items=ids.map(id=>{const n=ctx.model.getObjectByName(id);if(!n)return null;const v=new THREE.Box3().setFromObject(n).getCenter(new THREE.Vector3()).project(ctx.camera);return{id,x:(v.x+1)*960,y:(1-v.y)*540};}).filter(Boolean).sort((a,b)=>a.y-b.y);
- ctx.labels.innerHTML=items.map((v,i)=>{const left=v.x<960, x=left?95:1590,y=385+i*85,end=left?x+210:x;return `<path d="M ${v.x} ${v.y} L ${left?end+35:end-35} ${y+25} L ${end} ${y+25}"/><circle cx="${v.x}" cy="${v.y}" r="5"/><rect x="${x}" y="${y}" width="210" height="50" rx="8"/><text x="${x+20}" y="${y+34}">${names[v.id]||esc(v.id)}</text>`;}).join('');
+ const parts=[...new Set([...Object.keys(names),'rope','rail_left','rail_right',...ids])].map(id=>{
+  const node=ctx.model.getObjectByName(id);if(!node)return null;
+  const bounds=partBounds(node);return {id,...projectPoint(ctx,bounds.getCenter(new THREE.Vector3())),rect:projectBounds(ctx,bounds)};
+ }).filter(Boolean);
+ const items=parts.filter(p=>ids.includes(p.id)).sort((a,b)=>a.y-b.y);
+ ctx.labels.innerHTML=items.map((v,i)=>{
+  const left=!rightSide&&v.x<960,x=left?95:1590,y=rightSide?300+i*Math.min(85,440/Math.max(1,items.length-1)):385+i*85;
+  const points=routeLeader(v,{x:left?x+210:x,y:y+25},parts.filter(p=>p!==v).map(p=>p.rect));
+  return `<g data-part="${esc(v.id)}"><path d="${points.map((p,j)=>`${j?'L':'M'} ${p.x} ${p.y}`).join(' ')}"/><circle cx="${v.x}" cy="${v.y}" r="5"/><rect x="${x}" y="${y}" width="210" height="50" rx="8"/><text x="${x+20}" y="${y+34}">${names[v.id]||esc(v.id)}</text></g>`;
+ }).join('');
+}
+// SVG 文字按实际字体包围盒加不透明底，保持字样与钢板高亮区分离。
+export function backLabels(ctx){
+ for(const text of ctx.labels.querySelectorAll?.('text')||[]){
+  const b=text.getBBox(),rect=document.createElementNS('http://www.w3.org/2000/svg','rect');
+  for(const [key,value] of Object.entries({x:b.x-10,y:b.y-5,width:b.width+20,height:b.height+10,rx:6}))rect.setAttribute(key,String(value));
+  rect.setAttribute('class','label-background');text.style.fill='#fff';text.before(rect);
+ }
 }
 export const setup = () => {};
 
