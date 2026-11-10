@@ -16,9 +16,34 @@ from typing import Callable
 
 from app import config, events, storage
 
-MODEL_KINDS = {"title", "model_orbit", "motion"}
+MODEL_KINDS = {"title", "model_orbit", "motion", "exploded", "data_card", "outro"}
 FACT_IDS = {"F_girder_length", "F_overall_height", "F_span", "F_lift_height",
             "F_girder_height", "F_wheel_count"}
+
+
+# 对应 web/player/style.css 的 1920×1080 HUD：数字卡 right:70/max-width:500、
+# 倍速框 right:75/bottom:265、章节标题 top:154、字幕 bottom:96。
+# 安全框按任务规定的 HUD 分区比例，随背景分辨率等比缩放。
+HUD_SIDE_MARGIN = .05
+HUD_RIGHT_LIMIT = .74
+HUD_SECTION_TOP = .20
+HUD_CAPTION_BOTTOM = .86
+# 左侧参数卡及片尾左上标题的独立留白；这两类不显示右侧数字卡。
+HUD_DATA_LEFT = .46
+HUD_OUTRO_LEFT = .40
+HUD_OUTRO_TOP = .30
+
+
+def shot_safe_rect(shot: dict) -> tuple[float, float, float, float]:
+    kind = shot["kind"]
+    if kind in {"data_card", "outro"}:
+        return (HUD_DATA_LEFT if kind == "data_card" else HUD_OUTRO_LEFT,
+                HUD_SIDE_MARGIN if kind == "data_card" else HUD_OUTRO_TOP,
+                1-HUD_SIDE_MARGIN, .80 if kind == "outro" else HUD_CAPTION_BOTTOM)
+    return (.45 if kind == "title" else HUD_SIDE_MARGIN,
+            HUD_SECTION_TOP if kind in {"model_orbit", "motion", "exploded"} else HUD_SIDE_MARGIN,
+            HUD_RIGHT_LIMIT if shot.get("text_overlays") or kind == "motion" else 1-HUD_SIDE_MARGIN,
+            HUD_CAPTION_BOTTOM)
 
 
 def blender_executable() -> str | None:
@@ -45,7 +70,8 @@ def cache_key(shot: dict, facts: dict, engine: str, width: int, height: int, fps
                 if item["id"] in FACT_IDS and item.get("status") in {"verified", "confirmed"}}
     payload = {"kind": shot["kind"], "params": shot.get("params", {}),
                "duration": shot["end"] - shot["start"], "facts": accepted,
-               "engine": engine, "width": width, "height": height, "fps": fps}
+               "engine": engine, "width": width, "height": height, "fps": fps,
+               "safe_rect": shot_safe_rect(shot)}
     digest.update(json.dumps(payload, sort_keys=True, ensure_ascii=False, allow_nan=False).encode())
     return digest.hexdigest()[:12]
 
@@ -152,7 +178,8 @@ def render_model_shots(pid: str, run: str, timeline: dict) -> dict[str, dict]:
                         str(config.ROOT / "blender/render_shot.py"), "--",
                         "--facts", str(directory / "facts.json"), "--shot-json", json.dumps(shot, ensure_ascii=False),
                         "--out", str(out), "--engine", engine, "--fps", str(fps),
-                        "--duration", str(duration), "--frame-format", "jpg", "--skip-video"]
+                        "--duration", str(duration), "--frame-format", "jpg", "--skip-video",
+                        "--safe-rect", ",".join(str(v) for v in shot_safe_rect(shot))]
                 if preview:
                     args.append("--preview")
                 _render(args, timeout, progress)

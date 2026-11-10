@@ -182,3 +182,29 @@ def test_replay_repairs_duplicate_with_preview(sample, monkeypatch):
     monkeypatch.setattr(llm, 'complete_json', inspect)
     repair(sample, 'r1', issues)
     assert not [i for i in validate(sample, 'r1')['issues'] if i['severity'] == 'block']
+
+
+@pytest.mark.parametrize('mode', [None, 'standard', 'photoreal'])
+def test_planner_system_snapshot_and_photoreal_suffix(project, monkeypatch, mode):
+    import hashlib
+    pid = project['id']
+    if mode is not None:
+        storage.write_json(pid, 'project.json', {**project, 'render_mode':mode})
+    standard_hash = '0257a1475a8678283f6e394a2810c41b7d815ac62c55fcfd78078b9954d40a05'
+    base = planner.PLANNER_SYSTEM.replace('{target_s}', '45')
+    assert hashlib.sha256(base.encode()).hexdigest() == standard_hash
+    seen = []
+    def complete(task, system, user, schema, **kwargs):
+        seen.append((task, system, user))
+        raw = raw_shot(id='S1', duration_s=45)
+        return {'title':'示例', 'shots':[raw]} if task == 'plan' else raw if task == 'revise' else {'shots':[raw]}
+    monkeypatch.setattr(llm, 'complete_json', complete)
+    plan(pid, 'r1')
+    revise_shot(pid, 'r1', 'S1', '保留原意')
+    repair(pid, 'r1', [{'shot':'S1', 'severity':'block'}])
+    assert [task for task,_,_ in seen] == ['plan','revise','repair']
+    for _,system,user in seen:
+        assert system == base + ('\n'+planner.PHOTOREAL_SYSTEM if mode == 'photoreal' else '')
+        assert 'render_mode' not in json.loads(user)
+        if mode != 'photoreal':
+            assert hashlib.sha256(system.encode()).hexdigest() == standard_hash

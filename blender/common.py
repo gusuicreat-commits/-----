@@ -417,3 +417,125 @@ def motion_camera(dim: Dimensions, offset: Vec3 = (0.0,0.0,0.0), width: int = 19
         else:
             low = mid
     return (tuple(p+d for p,d in zip(pose(high),offset)), tuple(p+d for p,d in zip(target,offset)))
+
+
+SafeRect = tuple[float, float, float, float]
+PartBounds = Mapping[str, tuple[Vec3, Vec3]]
+
+
+def validate_safe_rect(rect: SafeRect) -> SafeRect:
+    if len(rect) != 4 or not all(math.isfinite(v) for v in rect):
+        raise ValueError("构图安全框必须包含四个有限数值")
+    x0, y0, x1, y1 = rect
+    if not (0 <= x0 < x1 <= 1 and 0 <= y0 < y1 <= 1):
+        raise ValueError("构图安全框必须在画幅内，且左上小于右下")
+    return rect
+
+
+def exploded_offsets(parts: list[str], spread_m: float, time_s: float, duration: float,
+                     bounds_by_part: PartBounds) -> dict[str, Vec3]:
+    """契约坐标的世界位移；净空按部件本体外包计算，端点保持装配状态。"""
+    if not all(math.isfinite(v) for v in (spread_m, time_s, duration)) or duration <= 0 or spread_m < 0:
+        raise ValueError("爆炸图时长须为正数，分离距离须为非负有限数")
+    progress = ease(min(time_s / duration * 3, (1 - time_s / duration) * 3))
+    amount = progress * spread_m * .6
+    directions = {"girder": (0, 1, 0), "leg_left": (-1, 0, 0),
+                  "leg_right": (1, 0, 0), "trolley": (0, 1.8, 0), "hoist_hook": (0, -1, 0)}
+    offsets = {name: tuple(v * amount for v in directions.get(name, (0, 0, 0)))
+               if name in parts else (0.0, 0.0, 0.0) for name in bounds_by_part}
+    if progress and spread_m:
+        if "girder" in parts and "girder" in bounds_by_part:
+            tops = [bounds_by_part[n][1][1] for n in ("leg_left", "leg_right") if n in bounds_by_part]
+            if tops:
+                required = max(tops) + 6 - bounds_by_part["girder"][0][1]
+                offsets["girder"] = (0.0, max(amount, required * progress), 0.0)
+        if "trolley" in parts and "trolley" in bounds_by_part and "girder" in bounds_by_part:
+            # 两米本体净空；不使用含下挂吊钩的层级外包。
+            required = bounds_by_part["girder"][1][1] - bounds_by_part["trolley"][0][1] + 2
+            lift = max(1.8 * amount, offsets["girder"][1] + required * progress)
+            offsets["trolley"] = (0.0, lift, 0.0)
+    if "cab" in offsets:
+        offsets["cab"] = offsets.get("leg_left", (0.0, 0.0, 0.0))
+    return offsets
+
+
+def exploded_rope(dim: Dimensions, offsets: Mapping[str, Vec3]) -> tuple[float, float]:
+    """返回小车局部绳索缩放与平移，分解时连接主梁底面和滑轮组，装配时恢复小车端点。"""
+    trolley_y = offsets.get("trolley", (0, 0, 0))[1]
+    hook_y = offsets.get("hoist_hook", (0, 0, 0))[1]
+    top, bottom = dim.girder_top + 1, dim.hook_height + 3.9
+    separated = any(any(value != 0 for value in delta) for delta in offsets.values())
+    upper = dim.girder_bottom + offsets.get("girder", (0, 0, 0))[1] if separated else top
+    scale = (upper - bottom - hook_y) / (top - bottom)
+    shift = upper - dim.girder_top - trolley_y - (top - dim.girder_top) * scale
+    return scale, shift
+
+
+def displaced_corners(bounds_by_part: PartBounds, offsets: Mapping[str, Vec3]) -> list[Vec3]:
+    return [tuple(v + d for v, d in zip(p, offsets.get(name, (0, 0, 0))))
+            for name, box in bounds_by_part.items() for p in enclosing_corners(list(box))]
+
+
+def safe_camera(points: list[Vec3], angle_deg: float, safe: SafeRect,
+                width: int = 1920, height: int = 1080, *, target_x: float = 0.0,
+                center: tuple[float, float] | None = None,
+                elevation_deg: float | None = None) -> tuple[Vec3, Vec3, tuple[float, float]]:
+    """保持方位和英雄机位高度，求最近距离，以镜头偏移把外包放进安全框。"""
+    x0, y0, x1, y1 = validate_safe_rect(safe)
+    if not points or not all(math.isfinite(v) for p in points for v in p):
+        raise ValueError("取景轮廓必须包含有限坐标")
+    points = enclosing_corners(points)
+    cx, cy = center if center is not None else ((x0+x1)/2, (y0+y1)/2)
+    available_x, available_y = 2*min(cx-x0, x1-cx), 2*min(cy-y0, y1-cy)
+    if min(available_x, available_y) <= 0:
+        raise ValueError("构图中心必须位于安全框内部")
+    angle = math.radians(angle_deg)
+    target = (target_x, (min(p[1] for p in points)+max(p[1] for p in points))/2, 0.0)
+    fov = hero_fov_y(width, height)
+
+    def pose(distance: float) -> Vec3:
+        return (target_x+math.sin(angle)*distance,
+                8.0 if elevation_deg is None else target[1]+math.tan(math.radians(elevation_deg))*distance,
+                math.cos(angle)*distance)
+
+    def projection(distance: float) -> list[dict[str, Any]]:
+        return [project_point(p, pose(distance), target, width, height, fov) for p in points]
+
+    def fits(distance: float) -> bool:
+        pts = projection(distance)
+        return (all(p["depth_m"] > .01 for p in pts)
+                and (max(p["x"] for p in pts)-min(p["x"] for p in pts))/width <= available_x
+                and (max(p["y"] for p in pts)-min(p["y"] for p in pts))/height <= available_y)
+
+    low = max(.02, max((p[0]-target_x)*math.sin(angle)+p[2]*math.cos(angle) for p in points)+.02)
+    high = max(low*2, 100.0)
+    for _ in range(40):
+        if fits(high):
+            break
+        high *= 2
+    else:
+        raise ValueError("无法求解安全框取景距离")
+    for _ in range(52):
+        mid = (low+high)/2
+        if fits(mid):
+            high = mid
+        else:
+            low = mid
+    pts = projection(high)
+    dx = cx-(min(p["x"] for p in pts)+max(p["x"] for p in pts))/2/width
+    dy = cy-(min(p["y"] for p in pts)+max(p["y"] for p in pts))/2/height
+    return pose(high), target, (dx, dy)
+
+
+def graphic_camera(points: list[Vec3], kind: str, time_s: float, duration: float,
+                   safe: SafeRect, width: int = 1920, height: int = 1080
+                   ) -> tuple[Vec3, Vec3, tuple[float, float]]:
+    """参数卡六秒微推 4%，片尾全镜头后拉 8%；最近端仍完整落在安全框。"""
+    position, target, _ = safe_camera(points, 50 if kind == "outro" else 23, safe, width, height)
+    progress = max(0.0, min(1.0, time_s/(duration if kind == "outro" else 6)))
+    factor = 1+.08*progress if kind == "outro" else (1-.04*progress)/.96
+    position = tuple(b+(a-b)*factor for a, b in zip(position, target))
+    projected = [project_point(p, position, target, width, height, hero_fov_y(width, height)) for p in points]
+    shift = ((safe[0]+safe[2])/2-(min(p['x'] for p in projected)+max(p['x'] for p in projected))/2/width,
+             (safe[1]+safe[3])/2-(min(p['y'] for p in projected)+max(p['y'] for p in projected))/2/height)
+    return position, target, shift

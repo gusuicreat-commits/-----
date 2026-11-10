@@ -1,4 +1,4 @@
-"""后台渲染开场环绕镜头，并导出可供叠加标注使用的锚点。"""
+"""后台渲染写实模型镜头，并导出标注锚点与屏幕外包。"""
 from __future__ import annotations
 
 import argparse
@@ -16,11 +16,12 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import (ANCHOR_NODES, HERO_LENS_MM, HERO_SENSOR_MM, NODES, derive_dimensions, frame_times,
                     display_luminance, enclosing_corners, exposure_curve, interpolate_exposure,
-                    hero_azimuth, hero_camera, hero_fov_y, title_camera, motion_camera, motion_state, project_point, read_facts, resolve_path, set_attr, solve_exposure, to_blender)
+                    hero_azimuth, hero_fov_y, motion_state, project_point, read_facts, resolve_path, set_attr, solve_exposure, to_blender,
+                    validate_safe_rect, safe_camera, graphic_camera, exploded_offsets, exploded_rope, displaced_corners)
 
 
 def arguments(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="渲染门机环绕镜头；still-at 单位为秒")
+    parser = argparse.ArgumentParser(description="渲染门机写实镜头；still-at 单位为秒")
     parser.add_argument("--facts", required=True, help="核验参数文件")
     parser.add_argument("--shot-json", required=True, help="完整镜头 JSON")
     parser.add_argument("--out", required=True, help="输出目录")
@@ -35,6 +36,7 @@ def arguments(argv: list[str]) -> argparse.Namespace:
     stills.add_argument("--stills", help="多个时刻，以逗号分隔（秒），例如 0.5,3,5.5")
     parser.add_argument("--width", type=int, default=1920)
     parser.add_argument("--height", type=int, default=1080)
+    parser.add_argument("--safe-rect", help="归一化安全框 x0,y0,x1,y1，左上原点")
     parser.add_argument("--preview", action="store_true", help="分辨率减半，实时引擎采样减半")
     args = parser.parse_args(argv)
     if min(args.samples,args.fps,args.width,args.height) <= 0:
@@ -52,6 +54,11 @@ def arguments(argv: list[str]) -> argparse.Namespace:
             parser.error("多帧时刻必须在零与镜头时长之间（单位：秒）")
         if len(set(args.stills)) != len(args.stills):
             parser.error("多帧时刻不能重复，以免覆盖图片")
+    if args.safe_rect is not None:
+        try:
+            args.safe_rect = validate_safe_rect(tuple(float(v) for v in args.safe_rect.split(',')))
+        except ValueError as exc:
+            parser.error(str(exc))
     if args.preview:
         args.width, args.height = max(1,args.width//2), max(1,args.height//2)
         if args.engine == "eevee":
@@ -187,22 +194,66 @@ def meter_exposure(scene: Any, subjects: list[Any]) -> dict[str, Any]:
         bpy.context.view_layer.update()
 
 
+def surface_pin(scene: Any, graph: Any, objects: list[Any]) -> Any:
+    """从相机沿主体中心视线取可见表面；跳过附属件和其他节点。"""
+    bodies = [obj for obj in objects if obj.type == "MESH" and obj.get("anchor_body")]
+    if not bodies:
+        low, high = bounds(objects, graph)
+        return (low+high)/2
+    # 双主梁、双腿柱分别取近侧实体，避免中心落在两实体之间的空洞。
+    groups: dict[str, list[Any]] = {}
+    for obj in bodies:
+        groups.setdefault(obj["anchor_body"], []).append(obj)
+    centers = []
+    for group in groups.values():
+        low, high = bounds(group, graph)
+        centers.append(((low+high)/2, group))
+    camera = scene.camera.matrix_world.translation
+    center, group = min(centers, key=lambda item: (camera-item[0]).length)
+    direction = (center-camera).normalized()
+    origin = camera.copy()
+    remaining = (center-camera).length
+    targets = {obj.as_pointer() for obj in group}
+    # 首个主体命中即为朝向相机的表面，未命中则保留主体中心。
+    for _ in range(128):
+        hit, location, _, _, obj, _ = scene.ray_cast(graph, origin, direction, distance=remaining)
+        if not hit:
+            break
+        if getattr(obj, "original", obj).as_pointer() in targets:
+            return location
+        step = (location-origin).length + .0001
+        remaining -= step
+        if remaining <= 0:
+            break
+        origin = location + direction*.0001
+    return center
+
+
 def anchors(scene: Any, parents: dict[str, Any]) -> dict[str, Any]:
-    """求部件外包中心；可见仅表示在画幅内且位于相机正面，不判断遮挡。"""
+    """保留整部件外包，另导出主体表面 pin；visible 仍只表示中心在画幅内。"""
     import bpy
     from bpy_extras.object_utils import world_to_camera_view
+    from mathutils import Vector
 
     graph = bpy.context.evaluated_depsgraph_get()
     result = {}
     width = scene.render.resolution_x * scene.render.resolution_percentage / 100
     height = scene.render.resolution_y * scene.render.resolution_percentage / 100
     for name in ANCHOR_NODES:
-        low, high = bounds(part_objects(parents[name]), graph)
+        objects = part_objects(parents[name])
+        low, high = bounds(objects, graph)
         center = (low+high)/2
+        pin = world_to_camera_view(scene, scene.camera, surface_pin(scene, graph, objects))
         projected = world_to_camera_view(scene, scene.camera, center)
         valid = abs(projected.z) > 1e-9
         visible = bool(valid and projected.z > 0 and 0 <= projected.x <= 1 and 0 <= projected.y <= 1)
-        result[name] = {"x":projected.x*width if valid else None,
+        corners = [world_to_camera_view(scene, scene.camera, Vector(p))
+                   for p in enclosing_corners([tuple(low), tuple(high)])]
+        screen_box = ([min(p.x for p in corners)*width, (1-max(p.y for p in corners))*height,
+                       max(p.x for p in corners)*width, (1-min(p.y for p in corners))*height]
+                      if all(p.z > 1e-9 for p in corners) else None)
+        result[name] = {"bbox":screen_box, "pin":{"x":pin.x*width, "y":(1-pin.y)*height},
+                        "x":projected.x*width if valid else None,
                         "y":(1-projected.y)*height if valid else None,
                         "visible":visible, "in_frame":visible,
                         "center_m":(center.x,center.z,-center.y)}
@@ -236,10 +287,17 @@ def main(argv: list[str]) -> None:
     args = arguments(argv)
     dim = derive_dimensions(read_facts(args.facts))
     shot = json.loads(args.shot_json)
-    if not isinstance(shot,dict) or shot.get("kind","model_orbit") not in ("model_orbit", "title", "motion") or not isinstance(shot.get("params",{}),dict):
-        raise ValueError("渲染入口只接受 model_orbit、title 或 motion 镜头对象")
+    if not isinstance(shot,dict) or shot.get("kind","model_orbit") not in ("model_orbit", "title", "motion", "exploded", "data_card", "outro") or not isinstance(shot.get("params",{}),dict):
+        raise ValueError("渲染入口只接受 model_orbit、title、motion、exploded、data_card 或 outro 镜头对象")
     params = shot.get("params",{})
     kind = shot.get("kind", "model_orbit")
+    if args.safe_rect is None:
+        # 与后端默认 HUD 安全框一致；直接调用脚本时也保护标题和字幕。
+        args.safe_rect = (.45 if kind == "title" else .05,
+                          .05 if kind == "title" else .20,
+                          .74 if shot.get("text_overlays") or kind == "motion" else .95, .86)
+        if kind in {"data_card", "outro"}:
+            args.safe_rect = (.46,.05,.95,.86) if kind == "data_card" else (.40,.30,.95,.80)
     hero_azimuth(params,0,args.duration)  # 建模前校验。
     if kind == "motion":
         motion_state(dim,params,0,args.duration)
@@ -270,18 +328,37 @@ def main(argv: list[str]) -> None:
         raise ValueError(f"门机外包尺寸与参数化模型不一致：{actual_bbox}，预期 {dim.bbox}")
     # 整机外包八角点取景，排除轨道；保留实际倒角后的外轮廓余量。
     silhouette = []
+    part_boxes = {}
     subjects = []
     for name in NODES:
         if name in ("rail_left", "rail_right"):
             continue
-        for obj in part_objects(parents[name]):
+        objects = part_objects(parents[name])
+        if objects:
+            part_low, part_high = bounds(objects, graph)
+            part_boxes[name] = ((part_low.x, part_low.z, -part_high.y),
+                                (part_high.x, part_high.z, -part_low.y))
+        for obj in objects:
             subjects.append(obj)
             evaluated = obj.evaluated_get(graph)
             for corner in evaluated.bound_box:
                 p = evaluated.matrix_world @ Vector(corner)
                 silhouette.append((p.x,p.z,-p.y))
     silhouette = enclosing_corners(silhouette)
-    environment(dim,mats,23 if kind == "title" else 24 if kind == "motion" else hero_azimuth(params,args.duration/2,args.duration))
+    # 最大分离外包也包含装配端点；所有位移在同一进度上单调变化。
+    if kind == "exploded":
+        peak = exploded_offsets(params.get("parts", []), float(params.get("spread_m", 12)),
+                                args.duration/2, args.duration, part_boxes)
+        silhouette = enclosing_corners(displaced_corners(part_boxes, peak) + displaced_corners(part_boxes, {}))
+    elif kind == "motion" and params.get("axis") != "gantry":
+        sweep = []
+        for time_s in (0.0, args.duration):
+            state = motion_state(dim, params, time_s, args.duration)
+            offsets = {"trolley": (state["trolley_x"], 0, 0),
+                       "hoist_hook": (state["trolley_x"], state["hook_height"]-dim.hook_height, 0)}
+            sweep.extend(displaced_corners(part_boxes, offsets))
+        silhouette = enclosing_corners(sweep)
+    environment(dim,mats,50 if kind == "outro" else 23 if kind in {"title", "data_card"} else 24 if kind == "motion" else 13 if kind == "exploded" else hero_azimuth(params,args.duration/2,args.duration))
     # 轨道属于环境，大车移动时保持世界坐标不变。
     for name in ("rail_left", "rail_right"):
         matrix = parents[name].matrix_world.copy()
@@ -301,6 +378,7 @@ def main(argv: list[str]) -> None:
     payload: dict[str, Any] = {"version":1,"width":args.width,"height":args.height,"fps":args.fps,
         "duration_s":args.duration,"coordinate_system":"像素坐标，左上为原点",
         "visibility":"部件包围盒中心投影；visible/in_frame 表示中心在画幅内且位于相机正面，不判断遮挡",
+        "pin_definition":"主体网格朝向相机的表面投影；未命中时用主体中心，不含梯子、扶手与悬挂杆",
         "frames":[]}
     info.update({"bbox_m":dict(zip("xyz",actual_bbox)),"assumed":dim.assumed,
                  "wheel_count":dim.wheel_count,"hoist_range_m":dim.hoist_range,
@@ -308,18 +386,29 @@ def main(argv: list[str]) -> None:
                  "resolution":[args.width,args.height],"fov_y_deg":hero_fov_y(args.width,args.height),
                  "lens_mm":HERO_LENS_MM,"sensor_width_mm":HERO_SENSOR_MM,
                  "shot_kind":kind,"camera_height_m":8 if kind != "title" else None,
-                 "max_width_ratio":.82 if kind == "model_orbit" else None,
-                 "max_height_ratio":.78 if kind == "model_orbit" else None,
-                 "bottom_ratio":.84 if kind == "model_orbit" else None,"preview":args.preview,"sensor_fit":"AUTO",
-                 "min_margin_ratio":.06,"frame_seconds":[],"camera_frames":[],"metering_frames":[]})
+                 "safe_rect":args.safe_rect,
+                 "max_width_ratio":args.safe_rect[2]-args.safe_rect[0],
+                 "max_height_ratio":args.safe_rect[3]-args.safe_rect[1],
+                 "bottom_ratio":args.safe_rect[3],"preview":args.preview,"sensor_fit":"AUTO",
+                 "min_margin_ratio":min(args.safe_rect[0],args.safe_rect[1],1-args.safe_rect[2],1-args.safe_rect[3]),"frame_seconds":[],"camera_frames":[],"metering_frames":[]})
     for warning in info["warnings"]:
         print(f"提示：{warning}",flush=True)
+    fixed_pose = (safe_camera(silhouette, 13, args.safe_rect, args.width, args.height)
+                  if kind == "exploded" else None)
+    base_locations = {name: tuple(parents[name].location) for name in ANCHOR_NODES}
+
     def set_camera(time_s: float) -> tuple[tuple, tuple]:
-        camera_data.shift_x = camera_data.shift_y = 0
         if kind == "title":
-            position,target,shift = title_camera(dim,time_s,args.width,args.height,silhouette)
-            camera_data.shift_x = -shift[0]
-            camera_data.shift_y = shift[1]*args.height/max(args.width,args.height)
+            position,target,shift = safe_camera(silhouette, 23, args.safe_rect, args.width, args.height,
+                                                center=(.70,.56), elevation_deg=12)
+            # 最近距离留给推进末端，整个六秒推进都不越过左侧文字边界。
+            factor = (1-.06*max(0.0,min(1.0,time_s/6)))/.94
+            position = tuple(b+(a-b)*factor for a,b in zip(position,target))
+            pts = [project_point(p,position,target,args.width,args.height,hero_fov_y(args.width,args.height)) for p in silhouette]
+            shift = (.70-(min(p["x"] for p in pts)+max(p["x"] for p in pts))/2/args.width,
+                     .56-(min(p["y"] for p in pts)+max(p["y"] for p in pts))/2/args.height)
+        elif kind in {"data_card", "outro"}:
+            position,target,shift = graphic_camera(silhouette,kind,time_s,args.duration,args.safe_rect,args.width,args.height)
         elif kind == "motion":
             state = motion_state(dim,params,time_s,args.duration)
             parents["crane"].location = to_blender(state["crane"])
@@ -327,9 +416,24 @@ def main(argv: list[str]) -> None:
             parents["hoist_hook"].location = to_blender((0,state["hook_height"]-dim.girder_top,0))
             parents["rope"].scale.z = state["rope_scale"]
             parents["rope"].location.z = state["rope_offset"]
-            position,target = motion_camera(dim,state["crane"],args.width,args.height,silhouette)
+            position,target,shift = safe_camera(silhouette,24,args.safe_rect,args.width,args.height,target_x=10)
+            position = tuple(p+d for p,d in zip(position,state["crane"]))
+            target = tuple(p+d for p,d in zip(target,state["crane"]))
+        elif kind == "exploded":
+            offsets = exploded_offsets(params.get("parts", []), float(params.get("spread_m",12)),
+                                       time_s,args.duration,part_boxes)
+            for name in ANCHOR_NODES:
+                delta = offsets.get(name, (0,0,0))
+                if name == "hoist_hook":
+                    delta = tuple(a-b for a,b in zip(delta,offsets.get("trolley",(0,0,0))))
+                parents[name].location = tuple(a+b for a,b in zip(base_locations[name],to_blender(delta)))
+            parents["rope"].scale.z, parents["rope"].location.z = exploded_rope(dim, offsets)
+            position,target,shift = fixed_pose
         else:
-            position,target = hero_camera(dim,params,time_s,args.duration,args.width,args.height,silhouette)
+            position,target,shift = safe_camera(silhouette,hero_azimuth(params,time_s,args.duration),
+                                                args.safe_rect,args.width,args.height)
+        camera_data.shift_x = -shift[0]*args.width/max(args.width,args.height)
+        camera_data.shift_y = shift[1]*args.height/max(args.width,args.height)
         camera.location = to_blender(position)
         camera.rotation_euler = (Vector(to_blender(target))-camera.location).to_track_quat('-Z','Y').to_euler()
         bpy.context.view_layer.update()
@@ -362,20 +466,20 @@ def main(argv: list[str]) -> None:
         if not (out/filename).is_file():
             raise RuntimeError("渲染结束但没有生成背景帧")
         info["frame_seconds"].append(elapsed)
-        projected = [project_point(p,position,target,args.width,args.height,info["fov_y_deg"]) for p in silhouette]
-        if kind == "title":
-            for point in projected:
-                point["x"] -= camera_data.shift_x*args.width
-                point["y"] += camera_data.shift_y*max(args.width,args.height)
-        elif kind == "motion" and params["axis"] == "gantry":
-            offset = motion_state(dim,params,time_s,args.duration)["crane"]
-            projected = [project_point(tuple(v+d for v,d in zip(p,offset)),position,target,
-                                       args.width,args.height,info["fov_y_deg"]) for p in silhouette]
+        offset = (motion_state(dim,params,time_s,args.duration)["crane"]
+                  if kind == "motion" and params["axis"] == "gantry" else (0,0,0))
+        projected = [project_point(tuple(v+d for v,d in zip(p,offset)),position,target,
+                                   args.width,args.height,info["fov_y_deg"]) for p in silhouette]
+        for point in projected:
+            point["x"] -= camera_data.shift_x*max(args.width,args.height)
+            point["y"] += camera_data.shift_y*max(args.width,args.height)
         edges = {"left":min(p["x"] for p in projected),"right":max(p["x"] for p in projected),
                  "top":min(p["y"] for p in projected),"bottom":max(p["y"] for p in projected)}
-        cropped = edges["left"] < 0 or edges["right"] > args.width or edges["top"] < 0 or edges["bottom"] > args.height
+        x0,y0,x1,y1 = args.safe_rect
+        cropped = (edges["left"] < x0*args.width-1e-5 or edges["right"] > x1*args.width+1e-5
+                   or edges["top"] < y0*args.height-1e-5 or edges["bottom"] > y1*args.height+1e-5)
         info["camera_frames"].append({"time_s":time_s,"position_m":position,"target_m":target,
-            "exposure":scene.view_settings.exposure,"azimuth_deg":23 if kind == "title" else 24 if kind == "motion" else hero_azimuth(params,time_s,args.duration),
+            "exposure":scene.view_settings.exposure,"azimuth_deg":50 if kind == "outro" else 23 if kind in {"title", "data_card"} else 24 if kind == "motion" else 13 if kind == "exploded" else hero_azimuth(params,time_s,args.duration),
             "projected_width_ratio":(edges["right"]-edges["left"])/args.width,
             "width_below_preferred":(edges["right"]-edges["left"])/args.width < .7,
             "projected_height_ratio":(edges["bottom"]-edges["top"])/args.height,
@@ -389,7 +493,7 @@ def main(argv: list[str]) -> None:
             print(f"已完成第 {index}/{len(times)} 帧，单帧耗时 {elapsed:.2f} 秒，"
                   f"预计剩余 {remaining:.1f} 秒",flush=True)
     if kind == "model_orbit" and any(frame["width_below_preferred"] for frame in info["camera_frames"]):
-        warning = "部分时刻画宽低于 70%；固定机位高度、焦距和环绕方位下，优先保证上沿留白及下沿 84%"
+        warning = "部分时刻画宽低于 70%；固定机位高度、焦距和环绕方位下，优先保证 HUD 安全框内完整呈现"
         info["warnings"].append(warning)
         print(f"提示：{warning}",flush=True)
     (out/"anchors.json").write_text(json.dumps(payload,ensure_ascii=False,indent=2),encoding="utf-8")

@@ -147,6 +147,22 @@ def validate(pid: str, run: str) -> dict:
             total += duration
         with check("人工复核状态", sid):
             pending += shot.get("review", {}).get("status") == "pending"
+    with check("写实分镜偏好"):
+        if project.get("render_mode") == "photoreal":
+            valid = [s for s in shots if isinstance(s, dict)]
+            kinds = [s.get("kind") for s in valid]
+            first = valid[0] if valid else {}
+            if first.get("kind") != "model_orbit" or "girder" not in first.get("params", {}).get("highlight", []):
+                add("PHOTOREAL_OPENING", "warn", "写实开场建议用主梁高亮的整机环绕", "首镜头使用 model_orbit，highlight 包含 girder")
+            if "real_media" in kinds and (len(kinds) < 2 or kinds[1] != "real_media"):
+                add("PHOTOREAL_REAL_MEDIA_ORDER", "warn", "写实片中的实拍未放在第二镜头", "将首个 real_media 放在第二镜头")
+            for kind, label in (("exploded", "结构分解"), ("motion", "运动演示")):
+                if kind not in kinds:
+                    add("PHOTOREAL_MISSING_" + kind.upper(), "warn", f"写实片缺少{label}镜头", f"至少安排一个 {kind} 镜头")
+            if sum(k in {"model_orbit", "exploded", "motion", "title"} for k in kinds) < 3:
+                add("PHOTOREAL_MODEL_COUNT", "warn", "写实模型镜头合计少于三个", "增加环绕、结构分解或运动镜头")
+            if kinds.count("analogy") > 1:
+                add("PHOTOREAL_ANALOGY_COUNT", "warn", "写实片的类比镜头超过一个", "保留一个最直观的类比镜头")
     with check("模型尺寸"):
         for item in (model or {}).get("dims_check", []):
             if item.get("ok") is False:

@@ -137,3 +137,14 @@ def test_full_preview_with_short_render_and_audio(project: dict, monkeypatch: py
     saved = storage.read_json(pid, "timeline.json")
     assert saved["duration_s"] == 12 and saved["rendered_duration_s"] == pytest.approx(4, abs=.08)
     assert saved["shots"][2]["start"] == 8
+
+
+@pytest.mark.parametrize('mode', ['standard','photoreal'])
+def test_render_mode_persisted_for_player(project,monkeypatch,mode):
+    pid,_ = setup_timeline(project,monkeypatch)
+    settings = storage.read_json(pid,'project.json')
+    if mode == 'photoreal':
+        storage.write_json(pid,'project.json',{**settings,'render_mode':mode})
+    result = timeline.build_timeline(pid)
+    assert result['render_mode'] == mode
+    assert storage.read_json(pid,'timeline.json')['render_mode'] == mode

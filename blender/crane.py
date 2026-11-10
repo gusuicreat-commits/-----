@@ -15,10 +15,11 @@ class Geometry:
     """按节点和材质合并几何，减少场景对象和倒角修改器数量。"""
     def __init__(self, materials: dict[str, Any], parents: dict[str, Any]) -> None:
         self.materials, self.parents = materials, parents
-        self.batches: dict[tuple[str, str], tuple[list, list, list]] = defaultdict(lambda: ([], [], []))
+        self.body: str = ""
+        self.batches: dict[tuple[str, str, str], tuple[list, list, list]] = defaultdict(lambda: ([], [], []))
 
     def mesh(self, node: str, material: str, vertices: list, faces: list, smooth: bool = False) -> None:
-        verts, polys, shading = self.batches[(node, material)]
+        verts, polys, shading = self.batches[(node, material, self.body)]
         offset = len(verts)
         verts.extend(to_blender(tuple(v)) for v in vertices)
         polys.extend(tuple(offset + i for i in face) for face in faces)
@@ -68,13 +69,14 @@ class Geometry:
 
     def finish(self) -> list[Any]:
         objects = []
-        for (node, material), (vertices, faces, shading) in self.batches.items():
+        for (node, material, body), (vertices, faces, shading) in self.batches.items():
             mesh = bpy.data.meshes.new(f"{node}_{material}")
             mesh.from_pydata(vertices, [], faces)
             mesh.update()
             obj = bpy.data.objects.new(mesh.name, mesh)
             bpy.context.collection.objects.link(obj)
             obj.data.materials.append(self.materials[material])
+            obj["anchor_body"] = body
             if node in self.parents:
                 obj.parent = self.parents[node]
                 obj.matrix_parent_inverse = obj.parent.matrix_world.inverted()
@@ -128,7 +130,9 @@ def build_crane(dim: Dimensions, materials: dict[str, Any]) -> dict[str, Any]:
 
     for sign in (-1,1):
         z = sign * 3.2
+        g.body = f"web_{sign}"
         g.box("girder", (length,gh,2.6), (0,top-gh/2,z))
+        g.body = ""
         # 外露腹板加劲肋和上下翼缘。
         for face in (-1,1):
             for i in range(math.floor((length-.4)/2.5)+1):
@@ -146,6 +150,9 @@ def build_crane(dim: Dimensions, materials: dict[str, Any]) -> dict[str, Any]:
         g.box("girder", (length,.12,.18), (0,top+.06,z), "metal")
     for i in range(max(2,math.ceil(length/8))):
         x = -length/2+1+i*(length-2)/(max(2,math.ceil(length/8))-1)
+        # 横联避开中央吊绳通道，分解时绳索仍能贯穿双梁间隙。
+        if abs(x) < 1.4:
+            x = 2.0
         g.box("girder", (.65,1.0,6.4),(x,top-.7,0))
     for sign in (-1,1):
         x = sign*(length/2-.6)
@@ -161,7 +168,9 @@ def build_crane(dim: Dimensions, materials: dict[str, Any]) -> dict[str, Any]:
         g.box(node,(2.4,1.4,22),(x,2.6,0),"red")
         for side in (-1,1):
             base, crown = (x,3.3,side*8.8),(x,bottom,side*3.2)
+            g.body = f"column_{side}"
             g.bar(node,base,crown,2.0 if rigid else 1.15,2.0 if rigid else 1.1)
+            g.body = ""
             g.bar(node,base,(x,6,side*8.4),2.02 if rigid else 1.18,2.02 if rigid else 1.13,"red")
             if not rigid:
                 g.cylinder(node,(x-.95,bottom-.35,side*3.2),(x+.95,bottom-.35,side*3.2),.52)
@@ -201,7 +210,15 @@ def build_crane(dim: Dimensions, materials: dict[str, Any]) -> dict[str, Any]:
                 g.tube(node,points,.045,"paint")
 
     # 小车最高点严格落在整机高度；留出卷扬机与电气房的可读轮廓。
-    g.box("trolley",(12,.8,9),(0,top+.55,0),"red")
+    # 小车底架保留吊绳孔，避免伸缩绳索穿过整块实心平台。
+    for sign in (-1,1):
+        g.body = f"frame_{sign}"
+        g.box("trolley",(12,.8,3.3),(0,top+.55,sign*2.85),"red")
+        g.box("trolley",(4.6,.8,2.4),(sign*3.7,top+.55,0),"red")
+    g.body = ""
+    g.cylinder("trolley",(-1.6,top+1,0),(1.6,top+1,0),.12)
+    for x in (-.95,-.32,.32,.95):
+        g.cylinder("trolley",(x-.12,top+1,0),(x+.12,top+1,0),.85,"metal",32)
     for z in (-3.2,3.2):
         for x in (-4.4,4.4):
             g.cylinder("trolley",(x,top+.38,z-.23),(x,top+.38,z+.23),.36)
@@ -222,9 +239,13 @@ def build_crane(dim: Dimensions, materials: dict[str, Any]) -> dict[str, Any]:
         g.box("trolley",(8,.12,.4),(0,top+3.3,z),"grate")
 
     h = dim.hook_height
+    g.body = "housing"
     for z in (-1.3,1.3):
         g.box("hoist_hook",(3,2.5,.3),(0,h+2.85,z),"yellow")
         g.box("hoist_hook",(3,.55,.32),(0,h+2.0,z),"hazard")
+    # 绳端接在滑轮组顶端连接板内，不留悬空缝隙。
+    g.box("hoist_hook",(3,.18,2.6),(0,h+3.9,0),"yellow")
+    g.body = ""
     for x in (-.95,-.32,.32,.95):
         g.cylinder("hoist_hook",(x-.19,h+2.9,0),(x+.19,h+2.9,0),.95,"metal",32)
         for z in (-.85,.85):
@@ -234,6 +255,7 @@ def build_crane(dim: Dimensions, materials: dict[str, Any]) -> dict[str, Any]:
 
     cab_x, cab_y = -dim.span/2+3,bottom*.7
     g.bar("cab",(cab_x,cab_y+1.5,0),(cab_x,bottom,0),.5)
+    g.body = "cabin"
     for y in (cab_y-1.4,cab_y+1.4):
         g.box("cab",(4,.2,3),(cab_x,y,0))
     g.box("cab",(4,1.0,3),(cab_x,cab_y-.8,0),"red")
@@ -244,6 +266,7 @@ def build_crane(dim: Dimensions, materials: dict[str, Any]) -> dict[str, Any]:
         g.box("cab",(3.8,1.5,.045),(cab_x,cab_y+.5,z),"glass")
     for dx in (-1.96,1.96):
         g.box("cab",(.045,1.5,2.8),(cab_x+dx,cab_y+.5,0),"glass")
+    g.body = ""
     g.box("cab",(.7,.9,.7),(cab_x,cab_y-.05,0),"rubber")
     for node,x in (("rail_left",-dim.span/2),("rail_right",dim.span/2)):
         g.box(node,(.6,.07,120),(x,.035,0),"metal")

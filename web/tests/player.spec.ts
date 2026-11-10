@@ -866,3 +866,189 @@ test('T16写实背景帧锚点与网页三维切换保持确定性',async({page}
  await page.evaluate(()=>window.__player.seek(.5));
  await expect(bg).toHaveAttribute('src',/frame_00002\.jpg$/);
 });
+
+test('写实爆炸背景引线终点精确使用表面锚点且就近放置',async({page})=>{
+ const anchors=JSON.parse(await readFile(new URL('./fixtures/background/exploded-anchors.json',import.meta.url),'utf8'));
+ await page.goto('/player/index.html?timeline=/fixtures/background/exploded-timeline.json&mode=render');
+ await page.waitForFunction(()=>!!window.__player);await page.evaluate(()=>window.__player.ready);
+ let first='';
+ for(const [t,frame] of [[0,1],[1.49,3],[.5,2],[0,1]]){
+  await page.evaluate(t=>window.__player.seek(t),t);
+  await expect(page.locator('#scene')).toHaveCSS('visibility','hidden');
+  await expect(page.locator('#bg-frame')).toBeVisible();
+  await expect(page.locator('#labels g[data-part]')).toHaveCount(6);
+
+  await expect(page.locator('#content .section-title')).toContainText('从整体，读懂协同');
+  const nodes=anchors.frames[frame-1].nodes;
+  const leaders=explodedLabels(await page.locator('#labels').innerHTML());
+  assertLeadersSeparate(leaders);
+  for(const v of leaders){
+   for(const [a,b] of v.segments)expect(a.x===b.x||a.y===b.y,`${v.id} 引线必须正交`).toBe(true);
+   expect(v.segments.filter(([a,b])=>a.y!==b.y).length).toBeLessThanOrEqual(1);
+  }
+  const boxes=Object.values(nodes).map((v:any)=>v.bbox.map((n:number)=>n*2));
+  const leftX=Math.max(40,Math.min(1920*.74-210,Math.min(...boxes.map(b=>b[0]))-238))+210;
+  const rightX=Math.max(40,Math.min(1920*.74-210,Math.max(...boxes.map(b=>b[2]))+28));
+  for(const v of leaders.filter(v=>['hoist_hook','trolley'].includes(v.id))){
+   expect(v.side).toBe(Math.abs(v.x-leftX)<=Math.abs(v.x-rightX)?'left':'right');
+  }
+
+  for(const [id,value] of Object.entries(nodes)){
+   const node=value as {x:number,y:number,bbox:number[],pin:{x:number,y:number}};
+   const point=await page.locator(`#labels g[data-part=${id}] path`).evaluate((path:SVGPathElement)=>{
+    const end=path.getPointAtLength(path.getTotalLength());return {x:end.x,y:end.y};
+   });
+   expect(Math.abs(point.x-node.pin.x*2),id).toBeLessThanOrEqual(2);
+   expect(Math.abs(point.y-node.pin.y*2),id).toBeLessThanOrEqual(2);
+  }
+  for(const id of ['hoist_hook','trolley']){
+   await expect(page.locator(`[data-highlight=${id}]`)).toHaveAttribute('cx',String(nodes[id].pin.x*2));
+   await expect(page.locator(`[data-highlight=${id}]`)).toHaveAttribute('cy',String(nodes[id].pin.y*2));
+  }
+  const left=await page.locator('#labels g[data-side=left]').evaluateAll(groups=>groups.map(g=>({id:g.getAttribute('data-part')!,right:Number(g.querySelector('rect')!.getAttribute('x'))+210})));
+  const edge=Math.min(...left.map(v=>nodes[v.id].bbox[0]*2));
+  for(const label of left){expect(edge-label.right).toBeGreaterThanOrEqual(0);expect(edge-label.right).toBeLessThanOrEqual(40);}
+  const html=await page.locator('#labels').innerHTML();
+  if(frame===1){if(first)expect(html).toBe(first);else first=html;}
+ }
+ await page.evaluate(()=>window.__player.seek(2));
+ await expect(page.locator('#scene')).toHaveCSS('visibility','visible');
+ await expect(page.locator('#bg-frame')).toBeHidden();
+ await page.evaluate(()=>window.__player.seek(.5));
+ await expect(page.locator('#scene')).toHaveCSS('visibility','hidden');
+ await expect(page.locator('#labels [data-part=cab]')).toBeVisible();
+});
+
+for(const mode of ['standard','photoreal'])for(const count of [2,3,4]){
+ test(`${mode}模式${count}项参数卡完整容纳项目且位于字幕上方`,async({page})=>{
+  const data=structuredClone(fixture);data.render_mode=mode;
+  const ids=Object.keys(data.facts).slice(0,count);
+  const card={...data.shots.find(s=>s.kind==='data_card'),id:'CARD',start:0,end:6,params:{facts:ids}};
+  if(mode==='photoreal'){
+   const bg=JSON.parse(await readFile(new URL('./fixtures/background/timeline.json',import.meta.url),'utf8')).shots[0].bg;
+   card.bg={...bg,frames:'/fixtures/background/frame_%05d.jpg',anchors:'/fixtures/background/anchors.json'};
+  }
+  data.shots=[card];data.duration_s=6;data.captions=[{start:0,end:6,text:'参数来自已核验技术资料\n完整来源保留在每个数值下方'}];
+  await page.route('**/cards-t18.json',route=>route.fulfill({json:data}));
+  for(const size of [{width:1920,height:1080},{width:960,height:540}]){
+   await page.setViewportSize(size);
+   await page.goto('/player/index.html?timeline=/fixtures/cards-t18.json&mode=render');
+   await page.evaluate(()=>window.__player.ready);
+   for(const t of [2,0,5,2]){
+    await page.evaluate(t=>window.__player.seek(t),t);
+    const panel=(await page.locator('.data-panel').boundingBox())!,caption=(await page.locator('#caption').boundingBox())!;
+    expect(panel.y+panel.height).toBeLessThan(caption.y-12*size.width/1920);
+    await expect(page.locator('.data-card')).toHaveCount(count);
+    for(const item of await page.locator('.data-card,.data-card .source').all()){
+     const box=(await item.boundingBox())!;
+     expect(box.x).toBeGreaterThanOrEqual(panel.x);expect(box.y).toBeGreaterThanOrEqual(panel.y);
+     expect(box.x+box.width).toBeLessThanOrEqual(panel.x+panel.width+1);
+     expect(box.y+box.height).toBeLessThanOrEqual(panel.y+panel.height+1);
+    }
+    if(count===4){
+     const boxes=await Promise.all((await page.locator('.data-card').all()).map(el=>el.boundingBox()));
+     expect(boxes[0]!.y).toBeCloseTo(boxes[1]!.y,1);expect(boxes[2]!.y).toBeCloseTo(boxes[3]!.y,1);
+     expect(boxes[2]!.y).toBeGreaterThan(boxes[0]!.y);
+    }
+    if(mode==='photoreal')await expect(page.locator('#bg-frame')).toHaveCSS('filter','brightness(0.78)');
+   }
+  }
+ });
+}
+
+test('写实类比背景左上为深蓝且焊缝切换不破坏主题，标准默认画面一致',async({page})=>{
+ const colors:Record<string,number[]>={};
+ for(const mode of ['default','standard','photoreal']){
+  const data=structuredClone(fixture);if(mode!=='default')data.render_mode=mode;
+  await page.route(`**/theme-${mode}.json`,route=>route.fulfill({json:data}));
+  await page.goto(`/player/index.html?timeline=/fixtures/theme-${mode}.json&mode=render`);
+  await page.evaluate(()=>window.__player.ready);
+  const analogy=data.shots.find(s=>s.kind==='analogy'),weld=data.shots.find(s=>s.kind==='weld_macro');
+  const sample=()=>page.locator('#scene').evaluate((canvas:HTMLCanvasElement)=>{
+   const c=document.createElement('canvas');c.width=1920;c.height=1080;
+   const g=c.getContext('2d')!;g.drawImage(canvas,0,0);return Array.from(g.getImageData(10,10,1,1).data);
+  });
+  await page.evaluate(t=>window.__player.seek(t),(analogy.start+analogy.end)/2);colors[mode]=await sample();
+  await page.evaluate(t=>window.__player.seek(t),(weld.start+weld.end)/2);await expect(page.locator('#error')).toBeHidden();
+  await page.evaluate(t=>window.__player.seek(t),(analogy.start+analogy.end)/2);expect(await sample()).toEqual(colors[mode]);
+ }
+ expect(colors.standard).toEqual(colors.default);
+ const [r,,b]=colors.photoreal;expect(b).toBeGreaterThan(r+8);expect(r).toBeLessThan(95);
+ expect(colors.photoreal).not.toEqual(colors.standard);
+});
+
+test('参数卡与片尾背景切换恢复亮度且片尾保留标题',async({page})=>{
+ const data=JSON.parse(await readFile(new URL('./fixtures/background/timeline.json',import.meta.url),'utf8'));
+ data.render_mode='photoreal';data.shots=[
+  {...data.shots[0],id:'CARD',kind:'data_card',start:0,end:2,params:{facts:[]}},
+  {...data.shots[0],id:'END',kind:'outro',start:2,end:4,params:{title:'宏大来自精确'}}];
+ data.duration_s=4;
+ await page.route('**/background/graphic-t18.json',route=>route.fulfill({json:data}));
+ await page.goto('/player/index.html?timeline=/fixtures/background/graphic-t18.json&mode=render');
+ await page.evaluate(()=>window.__player.ready);await page.evaluate(()=>window.__player.seek(1));
+ await expect(page.locator('#bg-frame')).toHaveCSS('filter','brightness(0.78)');
+ await page.evaluate(()=>window.__player.seek(3));
+ await expect(page.locator('#bg-frame')).toBeVisible();await expect(page.locator('#scene')).toHaveCSS('visibility','hidden');
+ await expect(page.locator('#bg-frame')).toHaveCSS('filter','none');await expect(page.locator('.outro h1')).toHaveText('宏大来自精确');
+});
+
+test('写实片尾副标题和来源在浅色天空上的像素对比度至少4.5',async({page})=>{
+ const data=JSON.parse(await readFile(new URL('./fixtures/background/timeline.json',import.meta.url),'utf8'));
+ data.render_mode='photoreal';data.duration_s=4;
+ data.facts={F_span:{name:'跨度',value:88,unit:'m',source:{doc:'设备技术参数与结构说明.pdf',page:2}}};
+ data.shots=[{...data.shots[0],id:'END',kind:'outro',start:0,end:4,
+  params:{title:'宏大来自精确',subtitle:'每一次协同，都有真实工程依据'},
+  bg:{...data.shots[0].bg,frames:'bright-frame_%05d.jpg'}}];
+ data.captions=[{start:0,end:4,text:'以事实丈量工程'}];
+ await page.route('**/background/contrast-t18b.json',route=>route.fulfill({json:data}));
+ await page.route('**/background/bright-frame_*.jpg',route=>route.fulfill({contentType:'image/svg+xml',body:
+  '<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080"><defs><linearGradient id="sky"><stop stop-color="#e5eef5"/><stop offset="1" stop-color="#ffffff"/></linearGradient></defs><path fill="url(#sky)" d="M0 0H1920V1080H0Z"/></svg>'}));
+ for(const size of [{width:1920,height:1080},{width:960,height:540}]){
+  await page.setViewportSize(size);
+  await page.goto('/player/index.html?timeline=/fixtures/background/contrast-t18b.json&mode=render');
+  await page.evaluate(()=>window.__player.ready);await page.evaluate(()=>window.__player.seek(2));
+  await expect(page.locator('.outro-shade')).toBeVisible();
+  const paragraph=page.locator('.outro-background p');
+  const rows=await paragraph.evaluate(el=>{
+   const box=el.getBoundingClientRect();
+   return [...el.childNodes].filter(node=>node.nodeType===Node.TEXT_NODE&&node.textContent?.trim()).map(node=>{
+    const range=document.createRange();range.selectNodeContents(node);
+    return [...range.getClientRects()].map(r=>({x:r.x-box.x,y:r.y-box.y,width:r.width,height:r.height}));
+   });
+  });
+  expect(rows).toHaveLength(3);
+  const foreground=(await paragraph.screenshot()).toString('base64');
+  // 同一坐标隐藏字形及阴影，保留遮罩和段落底色，取得真实文字背后的像素。
+  await paragraph.evaluate((el:HTMLElement)=>{el.style.color='transparent';el.style.textShadow='none';});
+  const background=(await paragraph.screenshot()).toString('base64');
+  await paragraph.evaluate((el:HTMLElement)=>{el.style.removeProperty('color');el.style.removeProperty('text-shadow');});
+  const samples=await page.evaluate(async({foreground,background,rows})=>{
+   const load=async(data:string)=>{
+    const img=new Image();img.src='data:image/png;base64,'+data;await img.decode();
+    const canvas=document.createElement('canvas');canvas.width=img.width;canvas.height=img.height;
+    const g=canvas.getContext('2d')!;g.drawImage(img,0,0);
+    return {width:img.width,height:img.height,rgba:g.getImageData(0,0,img.width,img.height).data};
+   };
+   const ink=await load(foreground),back=await load(background);
+   const luminance=(rgb:number[])=>rgb.map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;})
+    .reduce((sum,v,i)=>sum+v*[.2126,.7152,.0722][i],0);
+   return rows.map(rects=>{
+    let count=0,min=Infinity;
+    for(const r of rects)for(let y=Math.max(0,Math.ceil(r.y));y<Math.min(ink.height,r.y+r.height);y++){
+     for(let x=Math.max(0,Math.ceil(r.x));x<Math.min(ink.width,r.x+r.width);x++){
+      const i=(y*ink.width+x)*4,fg=Array.from(ink.rgba.slice(i,i+3));
+      // 只取字形内部实色像素，排除抗锯齿边缘及阴影。
+      if(!fg.every((v,j)=>Math.abs(v-[245,247,250][j])<=8))continue;
+      const bg=Array.from(back.rgba.slice(i,i+3));
+      min=Math.min(min,(luminance(fg)+.05)/(luminance(bg)+.05));count++;
+     }
+    }
+    return {count,min};
+   });
+  },{foreground,background,rows});
+  for(const [i,sample] of samples.entries()){
+   expect(sample.count,`第 ${i+1} 行须采到字形内部像素`).toBeGreaterThan(30);
+   expect(sample.min,`第 ${i+1} 行文字对比度`).toBeGreaterThanOrEqual(4.5);
+  }
+ }
+});

@@ -34,7 +34,7 @@ export function render(ctx,shot,t,dur){
  const bounds=new THREE.Box3().setFromObject(weld);
  ctx.camera.near=.000001;
  frameParallel(ctx,bounds,{angle:0,elevation:12,width:.50,cx:.34,cy:Math.max(.64,(bottom+180)/1080)});
- ctx.scene.background.set('#142330');
+ if(!ctx.photoreal)ctx.scene.background.set('#142330');
  const halfWidth=1/ctx.camera.projectionMatrix.elements[0],halfHeight=1/ctx.camera.projectionMatrix.elements[5];
  // 仅收紧本帧投影的深度区间，保留毫米级表面的深度精度。
  ctx.camera.projectionMatrix.makeOrthographic(-halfWidth,halfWidth,halfHeight,-halfHeight,ctx.camera.near,Math.max(.02,bounds.getSize(new THREE.Vector3()).length()*10));
