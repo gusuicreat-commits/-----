@@ -1,0 +1,73 @@
+{
+  "width": 960,
+  "height": 540,
+  "fps": 2,
+  "frames": [
+    {
+      "frame": 1,
+      "nodes": {},
+      "dims": {
+        "crane_bottom": {
+          "x": 180,
+          "y": 414
+        },
+        "crane_top": {
+          "x": 185,
+          "y": 150
+        },
+        "ref_bottom": {
+          "x": 770,
+          "y": 414
+        },
+        "ref_top": {
+          "x": 775,
+          "y": 150
+        }
+      }
+    },
+    {
+      "frame": 2,
+      "nodes": {},
+      "dims": {
+        "crane_bottom": {
+          "x": 182,
+          "y": 415
+        },
+        "crane_top": {
+          "x": 187,
+          "y": 151
+        },
+        "ref_bottom": {
+          "x": 772,
+          "y": 415
+        },
+        "ref_top": {
+          "x": 777,
+          "y": 151
+        }
+      }
+    },
+    {
+      "frame": 3,
+      "nodes": {},
+      "dims": {
+        "crane_bottom": {
+          "x": 184,
+          "y": 416
+        },
+        "crane_top": {
+          "x": 189,
+          "y": 152
+        },
+        "ref_bottom": {
+          "x": 774,
+          "y": 416
+        },
+        "ref_top": {
+          "x": 779,
+          "y": 152
+        }
+      }
+    }
+  ]
+}

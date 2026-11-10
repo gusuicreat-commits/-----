@@ -8,7 +8,7 @@ from typing import Any
 import bpy
 from mathutils import Vector
 
-from common import Dimensions, NODES, Vec3, set_attr, to_blender, wheel_distribution
+from common import Dimensions, NODES, Vec3, set_attr, to_blender, wheel_distribution, rigid_leg_profile
 
 
 class Geometry:
@@ -16,6 +16,9 @@ class Geometry:
     def __init__(self, materials: dict[str, Any], parents: dict[str, Any]) -> None:
         self.materials, self.parents = materials, parents
         self.body: str = ""
+        self.node_transforms: dict[str, tuple[float,float,float]] = {}
+        self.instance_transforms: dict[str, tuple] = {}
+        self.instance_detail = False
         self.batches: dict[tuple[str, str, str], tuple[list, list, list]] = defaultdict(lambda: ([], [], []))
 
     def mesh(self, node: str, material: str, vertices: list, faces: list, smooth: bool = False) -> None:
@@ -25,11 +28,26 @@ class Geometry:
         polys.extend(tuple(offset + i for i in face) for face in faces)
         shading.extend([smooth] * len(faces))
 
+    def instanced(self, node: str) -> bool:
+        return self.instance_detail or node.startswith("decor_crawler_")
+
+    def primitive(self, node: str, material: str, vertices: list, faces: list,
+                  origin: Vec3, basis: tuple, smooth: bool = False) -> None:
+        body = self.body
+        self.body = f"instance_{len(self.instance_transforms)}"
+        self.instance_transforms[self.body] = (origin,basis)
+        self.mesh(node,material,vertices,faces,smooth)
+        self.body = body
+
     def box(self, node: str, size: Vec3, center: Vec3, material: str = "paint") -> None:
         vertices = [(center[0] + x * size[0] / 2, center[1] + y * size[1] / 2, center[2] + z * size[2] / 2)
                     for x, y, z in ((-1,-1,-1),(1,-1,-1),(1,1,-1),(-1,1,-1),
                                     (-1,-1,1),(1,-1,1),(1,1,1),(-1,1,1))]
-        self.mesh(node, material, vertices, [(0,3,2,1),(4,5,6,7),(0,1,5,4),(3,7,6,2),(0,4,7,3),(1,2,6,5)])
+        faces = [(0,3,2,1),(4,5,6,7),(0,1,5,4),(3,7,6,2),(0,4,7,3),(1,2,6,5)]
+        if self.instanced(node):
+            self.primitive(node,material,vertices,faces,center,((size[0],0,0),(0,size[1],0),(0,0,size[2])))
+        else:
+            self.mesh(node,material,vertices,faces)
 
     def bar(self, node: str, start: Vec3, end: Vec3, width: float, depth: float | None = None,
             material: str = "paint") -> None:
@@ -39,7 +57,19 @@ class Geometry:
         side = direction.cross(reference).normalized() * width / 2
         other = direction.cross(side).normalized() * (depth or width) / 2
         vertices = [tuple(p + s * side + t * other) for p in (a,b) for s,t in ((-1,-1),(1,-1),(1,1),(-1,1))]
-        self.mesh(node, material, vertices, [(0,3,2,1),(4,5,6,7),(0,1,5,4),(1,2,6,5),(2,3,7,6),(3,0,4,7)])
+        faces = [(0,3,2,1),(4,5,6,7),(0,1,5,4),(1,2,6,5),(2,3,7,6),(3,0,4,7)]
+        if self.instanced(node):
+            self.primitive(node,material,vertices,faces,tuple(a),(tuple(side*2),tuple(other*2),tuple(b-a)))
+        else:
+            self.mesh(node,material,vertices,faces)
+
+    def tapered_box(self, node: str, bottom: Vec3, top: Vec3,
+                    base_width: float, top_width: float, thickness: float) -> None:
+        vertices = [(center[0]+dx*thickness/2, center[1], center[2]+dz*width/2)
+                    for center,width in ((bottom,base_width),(top,top_width))
+                    for dx,dz in ((-1,-1),(1,-1),(1,1),(-1,1))]
+        self.mesh(node, "paint", vertices,
+                  [(0,3,2,1),(4,5,6,7),(0,1,5,4),(1,2,6,5),(2,3,7,6),(3,0,4,7)])
 
     def cylinder(self, node: str, start: Vec3, end: Vec3, radius: float, material: str = "metal",
                  segments: int = 20) -> None:
@@ -51,8 +81,12 @@ class Geometry:
         vertices = [tuple(p + radius * (math.cos(i * math.tau / segments) * u + math.sin(i * math.tau / segments) * v))
                     for p in (a,b) for i in range(segments)]
         faces = [(i, (i+1)%segments, (i+1)%segments+segments, i+segments) for i in range(segments)]
-        self.mesh(node, material, vertices, faces, True)
-        self.mesh(node, material, vertices, [tuple(reversed(range(segments))), tuple(range(segments,2*segments))])
+        caps = [tuple(reversed(range(segments))), tuple(range(segments,2*segments))]
+        if self.instanced(node):
+            self.primitive(node,material,vertices,faces+caps,tuple(a),(tuple(u*radius),tuple(v*radius),tuple(b-a)),True)
+        else:
+            self.mesh(node, material, vertices, faces, True)
+            self.mesh(node, material, vertices, caps)
 
     def tube(self, node: str, points: list[Vec3], radius: float, material: str = "metal", sides: int = 8) -> None:
         vertices = []
@@ -68,23 +102,47 @@ class Geometry:
         self.mesh(node, material, vertices, faces, True)
 
     def finish(self) -> list[Any]:
+        from mathutils import Matrix
         objects = []
+        shared: dict[tuple, Any] = {}
         for (node, material, body), (vertices, faces, shading) in self.batches.items():
-            mesh = bpy.data.meshes.new(f"{node}_{material}")
-            mesh.from_pydata(vertices, [], faces)
-            mesh.update()
-            obj = bpy.data.objects.new(mesh.name, mesh)
+            transform = Matrix.Identity(4)
+            if body in self.instance_transforms:
+                origin,basis = self.instance_transforms[body]
+                transform = Matrix([to_blender(tuple(v)) for v in basis]).transposed().to_4x4()
+                transform.translation = Vector(to_blender(origin))
+                # 布景整体旋转也作用在实例矩阵上。
+                if hasattr(self,"backdrop_angle") and node.startswith("decor_crawler_"):
+                    transform = Matrix.Rotation(self.backdrop_angle,4,'Z') @ transform
+            elif node.startswith(("decor_worker_","decor_lamp_","decor_container_")):
+                if node in self.node_transforms:
+                    x,z,yaw = self.node_transforms[node]
+                    transform = Matrix.Translation(Vector((x,-z,0))) @ Matrix.Rotation(-yaw,4,'Z')
+                else:
+                    center = Vector(tuple(min(v[i] for v in vertices) for i in range(3)))
+                    transform = Matrix.Translation(center)
+            inverse = transform.inverted()
+            local = [tuple(inverse @ Vector(v)) for v in vertices]
+            key = (material,tuple(tuple(round(x,5) for x in v) for v in local),tuple(faces),tuple(shading))
+            mesh = shared.get(key)
+            if mesh is None:
+                mesh = bpy.data.meshes.new(f"{node}_{material}")
+                mesh.from_pydata(local, [], faces)
+                mesh.update()
+                mesh.materials.append(self.materials[material])
+                for polygon, smooth in zip(mesh.polygons, shading):
+                    polygon.use_smooth = smooth
+                shared[key] = mesh
+            obj = bpy.data.objects.new(f"{node}_{material}", mesh)
             bpy.context.collection.objects.link(obj)
-            obj.data.materials.append(self.materials[material])
-            obj["anchor_body"] = body
+            obj.matrix_world = transform
+            obj["anchor_body"] = "" if body in self.instance_transforms else body
+            obj["geometry_node"] = node
+            obj["geometry_material"] = material
             if node in self.parents:
                 obj.parent = self.parents[node]
                 obj.matrix_parent_inverse = obj.parent.matrix_world.inverted()
-            for polygon, smooth in zip(mesh.polygons, shading):
-                polygon.use_smooth = smooth
-            if material not in ("rope", "glass", "water", "seam") and node not in (
-                "ground", "ground_seams", "warehouse", "distant_crane", "hull_welds", "hull_frames"
-            ):
+            if node in self.parents and material not in ("rope", "glass", "water", "seam") and body not in self.instance_transforms:
                 bevel = obj.modifiers.new("边缘高光", "BEVEL")
                 set_attr(bevel, "width", .035)
                 set_attr(bevel, "segments", 2)
@@ -142,22 +200,23 @@ def build_crane(dim: Dimensions, materials: dict[str, Any]) -> dict[str, Any]:
             g.box("girder", (length,.16,2.76), (0,y,z))
         walkway_z = sign*4.9
         g.box("girder", (length,.16,.85), (0,top+.08,walkway_z), "grate")
+        g.instance_detail = True
         for y in (top+.58,top+1.13):
             g.bar("girder", (-length/2+.06,y,sign*5.25), (length/2-.06,y,sign*5.25), .085)
         for i in range(math.ceil(length/2.5)+1):
             x = -length/2+.06+i*(length-.12)/math.ceil(length/2.5)
             g.bar("girder", (x,top+.16,sign*5.25),(x,top+1.17,sign*5.25),.085)
+        g.instance_detail = False
         g.box("girder", (length,.12,.18), (0,top+.06,z), "metal")
-    for i in range(max(2,math.ceil(length/8))):
-        x = -length/2+1+i*(length-2)/(max(2,math.ceil(length/8))-1)
-        # 横联避开中央吊绳通道，分解时绳索仍能贯穿双梁间隙。
-        if abs(x) < 1.4:
-            x = 2.0
-        g.box("girder", (.65,1.0,6.4),(x,top-.7,0))
+    # 上下盖板围合单箱外壳，中央检修绳槽留空。
+    for y in (bottom+.08, top-.08):
+        for sign in (-1,1):
+            g.box("girder", (length/2-1.5,.16,3.8),
+                  (sign*(length/4+.75),y,0))
     for sign in (-1,1):
         x = sign*(length/2-.6)
         g.box("girder", (1.2,gh,9),(x,top-gh/2,0),"red")
-        g.box("girder", (1.22,.65,9.06),(x,bottom+.4,0),"hazard")
+        g.box("girder", (1.2,.65,9.06),(x,bottom+.4,0),"paint")
         for dx in (-.35,.35):
             g.bar("girder",(x+dx,bottom+.1,4.6),(x+dx,top+1.1,4.6),.08)
         for i in range(math.ceil((gh+1)/.35)):
@@ -166,22 +225,26 @@ def build_crane(dim: Dimensions, materials: dict[str, Any]) -> dict[str, Any]:
     wheel_counts = iter(wheel_distribution(dim.wheel_count))
     for node, x, rigid in (("leg_left",-dim.span/2,True),("leg_right",dim.span/2,False)):
         g.box(node,(2.4,1.4,22),(x,2.6,0),"red")
+        profile = rigid_leg_profile(dim)
         for side in (-1,1):
-            base, crown = (x,3.3,side*8.8),(x,bottom,side*3.2)
+            base_z = profile["base_width"]/2-profile["base_limb"]/2 if rigid else 8.8
+            crown_z = profile["top_width"]/2-profile["top_limb"]/2 if rigid else 3.2
+            base, crown = (x,3.3,side*base_z),(x,bottom,side*crown_z)
             g.body = f"column_{side}"
-            g.bar(node,base,crown,2.0 if rigid else 1.15,2.0 if rigid else 1.1)
+            if rigid:
+                g.tapered_box(node,base,crown,profile["base_limb"],profile["top_limb"],3.0)
+            else:
+                g.cylinder(node,base,crown,.8,"paint",24)
+                g.cylinder(node,(x-.95,bottom-.35,side*3.2),(x+.95,bottom-.35,side*3.2),.9,"paint")
+                g.box(node,(1.8,.3,2),(x,bottom-.1,side*3.2),"paint")
             g.body = ""
-            g.bar(node,base,(x,6,side*8.4),2.02 if rigid else 1.18,2.02 if rigid else 1.13,"red")
-            if not rigid:
-                g.cylinder(node,(x-.95,bottom-.35,side*3.2),(x+.95,bottom-.35,side*3.2),.52)
-                g.box(node,(1.8,.3,1.6),(x,bottom-.1,side*3.2),"red")
             count = next(wheel_counts)
             # 每角一列车轮沿轨道排列，车轮间距由总数适配。
             spacing = 8.4/max(1,count)
             radius = min(.62,spacing*.43)
             z_center = side*6.4
             g.box(node,(2.35,.5,9.0),(x,1.8,z_center),"red")
-            g.box(node,(2.38,.35,9.02),(x,1.75,z_center),"hazard")
+            g.box(node,(2.38,.35,9.02),(x,1.75,z_center),"paint")
             for i in range(count):
                 z = z_center+(i-(count-1)/2)*spacing
                 y = .3+radius
@@ -191,14 +254,17 @@ def build_crane(dim: Dimensions, materials: dict[str, Any]) -> dict[str, Any]:
                 g.cylinder(node,(x-.6,y,z),(x+.6,y,z),radius*.32,"red")
                 g.box(node,(1.2,.85,.16),(x,y+.46,z),"metal")
             for z in (z_center-4.6,z_center+4.6):
-                g.cylinder(node,(x,1.45,z-.16),(x,1.45,z+.16),.3,"rubber")
-        mid = (3.3+bottom)/2
-        g.box(node,(1.3 if rigid else .8,1.0,12),(x,mid,0))
+                g.cylinder(node,(x,1.45,z-.16),(x,1.45,z+.16),.3,"hazard")
         if rigid:
-            for side in (-1,1):
-                g.bar(node,(x,4,side*7.8),(x,mid,-side*5.7),.55)
-            g.bar(node,(x,3.3,0),(x+5,bottom,0),1.4)
-            ladder_x = x+1.08
+            for fraction in (.28,.54,.8):
+                y = 3.3+(bottom-3.3)*fraction
+                width = profile["base_width"]*(1-fraction)+profile["top_width"]*fraction
+                g.box(node,(3,1.1,width),(x,y,0))
+            # 顶架归属主梁，分解镜头不会留下穿入主梁的支腿附件。
+            extension = profile["top_extension"]
+            g.box("girder",(3,extension,profile["top_width"]),
+                  (x,top+extension/2,0))
+            ladder_x = x+1.58
             for z in (-.42,.42):
                 g.bar(node,(ladder_x,3.4,z),(ladder_x,bottom,z),.075)
             for i in range(math.ceil((bottom-3.4)/.35)):
@@ -230,8 +296,8 @@ def build_crane(dim: Dimensions, materials: dict[str, Any]) -> dict[str, Any]:
         groove = [(-2.85+5.7*i/720,top+2+.915*math.cos(i*math.tau/24),z+.915*math.sin(i*math.tau/24)) for i in range(721)]
         g.tube("trolley",groove,.025,"rope",6)
         g.box("trolley",(1.4,1.2,1.4),(4,top+1.8,z),"paint")
-    g.box("trolley",(7,2.1,2.6),(0,top+4.45,0),"yellow")
-    g.box("trolley",(7.2,.12,2.8),(0,dim.height-.06,0),"red")
+    g.box("trolley",(7,2.1,2.6),(0,top+4.45,0),"electrical")
+    g.box("trolley",(7.2,.12,2.8),(0,dim.height-.06,0),"electrical")
     for x in (-2.2,0,2.2):
         for i in range(9):
             g.box("trolley",(1.5,.07,.09),(x,top+3.8+i*.15,1.34),"grate")
@@ -242,7 +308,7 @@ def build_crane(dim: Dimensions, materials: dict[str, Any]) -> dict[str, Any]:
     g.body = "housing"
     for z in (-1.3,1.3):
         g.box("hoist_hook",(3,2.5,.3),(0,h+2.85,z),"yellow")
-        g.box("hoist_hook",(3,.55,.32),(0,h+2.0,z),"hazard")
+        g.box("hoist_hook",(3,.55,.32),(0,h+2.0,z),"paint")
     # 绳端接在滑轮组顶端连接板内，不留悬空缝隙。
     g.box("hoist_hook",(3,.18,2.6),(0,h+3.9,0),"yellow")
     g.body = ""

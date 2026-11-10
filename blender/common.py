@@ -310,7 +310,7 @@ def display_luminance(pixels: list[float]) -> dict[str, float | int]:
     return {"median":percentile(.5), "p98":percentile(.98), "pixel_count":len(values)}
 
 
-def solve_exposure(measure: Any, initial: float = 0.0) -> tuple[float, dict[str, Any]]:
+def solve_exposure(measure: Any, initial: float = 0.0, target: float = .42) -> tuple[float, dict[str, Any]]:
     """缓存探测图上求显示曝光；先匹配中位数，再约束高光。"""
     evaluations = 0
     def sample(exposure: float) -> dict[str, Any]:
@@ -319,12 +319,12 @@ def solve_exposure(measure: Any, initial: float = 0.0) -> tuple[float, dict[str,
         return measure(exposure)
     stats = sample(initial)
     # log2 给初始方向；显示变换非线性且可能已饱和，再用有界求根收敛。
-    guess = initial + math.log2(.42/max(float(stats["median"]),1e-6))
+    guess = initial + math.log2(target/max(float(stats["median"]),1e-6))
     low, high = -24.0, 24.0
     guess = max(low, min(high, guess))
     for _ in range(16):
         stats = sample(guess)
-        if stats["median"] > .42:
+        if stats["median"] > target:
             high = guess
         else:
             low = guess
@@ -539,3 +539,200 @@ def graphic_camera(points: list[Vec3], kind: str, time_s: float, duration: float
     shift = ((safe[0]+safe[2])/2-(min(p['x'] for p in projected)+max(p['x'] for p in projected))/2/width,
              (safe[1]+safe[3])/2-(min(p['y'] for p in projected)+max(p['y'] for p in projected))/2/height)
     return position, target, shift
+
+
+def rigid_leg_profile(dim: Dimensions) -> dict[str, float]:
+    """纵向外包由梁高派生；顶架只使用既有高度余量。"""
+    return {"base_width": dim.girder_height*3.2, "top_width": dim.girder_height*1.2,
+            "base_limb": dim.girder_height*.85, "top_limb": dim.girder_height*.38,
+            "top_extension": min(6.0, max(0.0, dim.height-dim.girder_top))}
+
+
+def analogy_layout(dim: Dimensions, analogy: Mapping[str, Any]) -> dict[str, Any]:
+    ref, size, ratio = analogy.get("ref"), float(analogy["ref_size_m"]), float(analogy["ratio"])
+    if ref not in {"building_floor", "football_field"}:
+        raise ValueError("该参照物不支持写实类比")
+    if not all(math.isfinite(v) and v > 0 for v in (size,ratio)):
+        raise ValueError("类比尺寸和比例必须为有限正数")
+    if ref == "building_floor":
+        height = dim.height
+        if analogy.get("fact") != "F_overall_height" or not math.isclose(ratio*size, dim.height, abs_tol=max(.01,size*.00051)):
+            raise ValueError("楼层类比高度与核验整机高度不一致")
+        ratio = height/size
+        x = dim.span/2+1.2+20+9.15
+        levels = [min(size,max(0.0,height-i*size)) for i in range(math.ceil(ratio))]
+        return {"ref":ref,"center":(x,0,0),"height":height,"floors":levels,
+                "bounds":[(x-9.15,0,-7.9),(x+9.15,height,7.9)],
+                "dims":{"crane_bottom":(0,.3,0),"crane_top":(0,dim.height,0),
+                        "ref_bottom":(x,0,0),"ref_top":(x,height,0)}}
+    if analogy.get("fact") != "F_girder_length" or not math.isclose(ratio*size,dim.length,abs_tol=max(.01,size*.00051)):
+        raise ValueError("球场类比长度与核验主梁长度不一致")
+    width = size*68/105
+    z = 65+width/2
+    return {"ref":ref,"center":(0,0,z),"length":size,"width":width,
+            "bounds":[(-size/2,0,z-width/2),(size/2,2.44,z+width/2)],
+            "dims":{"crane_left":(-dim.length/2,dim.girder_top+2,5.4),
+                    "crane_right":(dim.length/2,dim.girder_top+2,5.4),
+                    "ref_left":(-size/2,.1,z+width/2+3),"ref_right":(size/2,.1,z+width/2+3)}}
+
+
+def analogy_camera(dim: Dimensions, layout: Mapping[str, Any], time_s: float,
+                   width: int, height: int, safe: SafeRect) -> tuple[Vec3, Vec3, tuple[float,float], float]:
+    """住宅固定 35 mm、20 m 机位；球场固定 120 m、35° 俯角。"""
+    points = framing_points(dim)+enclosing_corners(layout["bounds"])+list(layout["dims"].values())
+    lo,hi = min(p[0] for p in points),max(p[0] for p in points)
+    cx = (lo+hi)/2
+    fov = math.degrees(2*math.atan(36*height/max(width,height)/70))
+    if layout["ref"] == "building_floor":
+        angle = math.radians(6)
+        target = (cx,dim.height/2,0.0)
+        def pose(distance: float) -> Vec3:
+            return (cx+math.sin(angle)*distance,20.0,math.cos(angle)*distance)
+        distance = max(dim.length,dim.height)
+        while True:
+            pts = [project_point(p,pose(distance),target,width,height,fov) for p in points]
+            if (min(p["depth_m"] for p in pts)>0 and
+                max(p["x"] for p in pts)-min(p["x"] for p in pts) < width*(safe[2]-safe[0]-.12) and
+                max(p["y"] for p in pts)-min(p["y"] for p in pts) < height*(.80-safe[1])):
+                break
+            distance *= 1.03
+        delta = 3*max(0.0,min(1.0,time_s/6))
+        position = pose(distance)
+        position = (position[0]+delta,position[1],position[2])
+        target = (target[0]+delta,target[1],target[2])
+    else:
+        target = (cx,0.0,layout["center"][2]/2)
+        position = (cx,120.0,target[2]+120/math.tan(math.radians(35)))
+        # 保持高度与俯角，扩大视角以容纳横向安全边距。
+        while True:
+            pts = [project_point(p,position,target,width,height,fov) for p in points]
+            if (max(p["x"] for p in pts)-min(p["x"] for p in pts) < width*(safe[2]-safe[0]-.1) and
+                max(p["y"] for p in pts)-min(p["y"] for p in pts) < height*(safe[3]-safe[1]-.08)):
+                break
+            fov += 1
+            if fov >= 120:
+                raise ValueError("球场与门机无法完整放入安全画幅")
+    pts = [project_point(p,position,target,width,height,fov) for p in points]
+    bottom = .80 if layout["ref"] == "building_floor" else safe[3]-.04
+    shift = ((safe[0]+safe[2])/2-(min(p["x"] for p in pts)+max(p["x"] for p in pts))/2/width,
+             bottom-max(p["y"] for p in pts)/height)
+    return position,target,shift,fov
+
+
+def worker_layout(dim: Dimensions) -> list[dict[str, Any]]:
+    """四个松散小组；固定种子确保逐帧位置和步态不跳变。"""
+    import random
+    rng = random.Random(1903)
+    groups = [(-dim.span/2-5,12,4),(dim.span/2+5,-14,5),
+              (23,-26,3),(28,64,4)]
+    result = []
+    for group,(cx,cz,count) in enumerate(groups):
+        points: list[tuple[float,float]] = []
+        while len(points) < count:
+            point = (rng.uniform(-1.45,1.45),rng.uniform(-1.45,1.45))
+            if all(1 <= math.dist(point,other) <= 3 for other in points):
+                points.append(point)
+        for j,(x,z) in enumerate(points):
+            result.append({"group":group,"x":cx+x,"z":cz+z,
+                           "yaw":rng.uniform(-math.pi,math.pi),"walking":j%2 == 1})
+    return result
+
+
+def calibrate_sun_energy(energy: float, e_sun: float, e_sky: float,
+                         target_ratio: float = 4.0) -> float:
+    """在线性亮度域按比例校正主光；不以曝光或显示色反推能量。"""
+    if any(not math.isfinite(v) or v <= 0 for v in (energy, e_sun, e_sky, target_ratio)):
+        raise ValueError("光比标定失败：能量、探针亮度和目标光比必须是有限正数")
+    calibrated = energy * (target_ratio * e_sky / e_sun)
+    if not math.isfinite(calibrated) or calibrated <= 0:
+        raise ValueError("光比标定失败：计算出的太阳能量超出有效范围")
+    return calibrated
+
+
+def quality_statistics(samples: Mapping[str, list[tuple[float,float,float]]]) -> dict[str, Any]:
+    """统计最终显示色；分类由实际几何射线决定，不以颜色阈值挑选好像素。"""
+    import colorsys
+    import statistics
+    def median(key: str) -> float | None:
+        values = [.2126*r+.7152*g+.0722*b for r,g,b in samples.get(key,[])]
+        return statistics.median(values) if len(values) >= 3 else None
+    lit, shade = median("sunlit_paint"),median("shaded_paint")
+    ground, shadow, ground_lit = median("ground"),median("crane_shadow"),median("sunlit_ground")
+    crane = samples.get("crane",[])
+    paint = [colorsys.rgb_to_hsv(*c) for c in samples.get("sunlit_paint", [])]
+    result = {"crane_mean_saturation":sum(colorsys.rgb_to_hsv(*c)[1] for c in crane)/len(crane) if crane else None,
+              "sunlit_paint_median_hue_deg":statistics.median(c[0]*360 for c in paint) if len(paint) >= 3 else None,
+              "sunlit_paint_median_saturation":statistics.median(c[1] for c in paint) if len(paint) >= 3 else None,
+              "ground_median_luminance":ground,
+              "sunlit_to_shaded_ratio":lit/shade if lit is not None and shade else None,
+              "shadow_to_sunlit_ground_ratio":shadow/ground_lit if shadow is not None and ground_lit else None,
+              "sample_counts":{key:len(values) for key,values in samples.items()}}
+    checks = {"sunlit_paint_median_hue_deg":(10,25,"门机受光面色相不在 10°–25°"),
+              "sunlit_paint_median_saturation":(.6,None,"门机受光面饱和度低于 0.6"),
+              "ground_median_luminance":(.30,.42,"地面中位亮度不在 0.30–0.42"),
+              "sunlit_to_shaded_ratio":(3,None,"门机朝阳面与背阳面亮度比不足 3:1"),
+              "shadow_to_sunlit_ground_ratio":(None,.55,"门机阴影与受光地面亮度比高于 0.55")}
+    result["warnings"] = []
+    for key,(low,high,message) in checks.items():
+        value = result[key]
+        if value is None:
+            result["warnings"].append(f"{message}：有效采样不足，未能判断")
+        elif (low is not None and value < low) or (high is not None and value > high):
+            result["warnings"].append(message)
+    result["passed"] = not result["warnings"]
+    return result
+
+
+def projected_rect(points: list[Vec3], pose: Mapping[str, Any], width: int, height: int) -> tuple[float,float,float,float]:
+    projected = [project_point(p,pose["position"],pose["target"],width,height,pose["fov"]) for p in points]
+    if any(p["depth_m"] <= 0 for p in projected):
+        return (-math.inf,-math.inf,math.inf,math.inf)
+    sx,sy = pose["shift"]
+    return (min(p["x"] for p in projected)/width+sx,min(p["y"] for p in projected)/height+sy,
+            max(p["x"] for p in projected)/width+sx,max(p["y"] for p in projected)/height+sy)
+
+
+def backdrop_layout(poses: list[dict[str, Any]], protected: list[list[Vec3]],
+                    width: int, height: int) -> list[dict[str, Any]]:
+    """在完整镜头的投影中选三处厂房位置；优先覆盖尚未看到完整厂房的机位。"""
+    middle = poses[len(poses)//2]
+    angle = math.atan2(middle["position"][0]-middle["target"][0],
+                       middle["position"][2]-middle["target"][2])
+    c,s = math.cos(angle),math.sin(angle)
+    obstacles = [[projected_rect(points,pose,width,height) for points in protected] for pose in poses]
+    candidates = []
+    for turn in (0,math.pi/2,None):
+        for depth in range(250,451,25):
+            for lateral in range(-550,551,5):
+                x,z = lateral*c-depth*s,-lateral*s-depth*c
+                yaw = (math.atan2(middle['position'][0]-x,middle['position'][2]-z)+math.pi/2
+                       if turn is None else angle+turn)
+                fc,fs = math.cos(yaw),math.sin(yaw)
+                points = [(x+dx*fc-dz*fs,y,z-dx*fs-dz*fc)
+                          for dx in (-60,60) for y in (0,38) for dz in (-33,33)]
+                visible,rects = [],[]
+                for i,pose in enumerate(poses):
+                    a,b,d,e = projected_rect(points,pose,width,height)
+                    rects.append((a,b,d,e))
+                    clear = all(d < r[0]-.006 or a > r[2]+.006 or e < r[1]-.006 or b > r[3]+.006
+                                for r in obstacles[i])
+                    visible.append(bool(.005 <= a < d <= .995 and .03 <= b < e <= .97 and clear))
+                candidates.append({"center":(x,0,z),"yaw":yaw,"depth_m":depth,
+                                   "visible":visible,"points":points,"rects":rects})
+    selected: list[dict[str, Any]] = []
+    covered: set[int] = set()
+    for _ in range(3):
+        def compatible(item: dict[str, Any], previous: dict[str, Any]) -> bool:
+            if math.dist(item["center"],previous["center"]) <= 140:
+                return False
+            for i,(a,b) in enumerate(zip(item['rects'],previous['rects'])):
+                if (item['visible'][i] or previous['visible'][i]) and not (
+                        a[2] < b[0]-.004 or a[0] > b[2]+.004 or a[3] < b[1]-.004 or a[1] > b[3]+.004):
+                    return False
+            return True
+        eligible = [item for item in candidates if all(compatible(item,p) for p in selected)]
+        choice = max(eligible,key=lambda item:(sum(v and i not in covered for i,v in enumerate(item["visible"])),
+                                               sum(item["visible"]),item["depth_m"]))
+        selected.append(choice)
+        covered.update(i for i,v in enumerate(choice["visible"]) if v)
+    return [{k:v for k,v in item.items() if k != "rects"} for item in selected]

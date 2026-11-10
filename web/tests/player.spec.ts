@@ -1052,3 +1052,24 @@ test('写实片尾副标题和来源在浅色天空上的像素对比度至少4.
   }
  }
 });
+
+for(const [shotIndex,axis] of ['height','length'].entries())test(`T19写实类比${axis}尺寸线与帧锚点一致`,async({page})=>{
+ const anchors=JSON.parse(await readFile(new URL(`./fixtures/background/analogy-${axis}-anchors.json`,import.meta.url),'utf8'));
+ await page.goto('/player/index.html?timeline=/fixtures/background/analogy-timeline.json&mode=render');
+ await page.evaluate(()=>window.__player.ready);
+ for(const [local,frame] of [[.5,2],[1,3],[0,1],[.5,2]]){
+  await page.evaluate(t=>window.__player.seek(t),shotIndex*1.5+local);
+  await expect(page.locator('#scene')).toHaveCSS('visibility','hidden');
+  await expect(page.locator('#bg-frame')).toBeVisible();
+  await expect(page.locator('.dimension-label')).toHaveCount(2);
+  const paths=await page.locator('#labels .dimension path').evaluateAll(nodes=>nodes.map(node=>{
+   const values=node.getAttribute('d')!.match(/^M ([\d.]+) ([\d.]+) L ([\d.]+) ([\d.]+)/)!;
+   return values.slice(1).map(Number);
+  }));
+  const keys=axis==='height'?[['crane_bottom','crane_top'],['ref_bottom','ref_top']]:[['crane_left','crane_right'],['ref_left','ref_right']];
+  for(let i=0;i<2;i++){
+   const [a,b]=keys[i].map(k=>anchors.frames[frame-1].dims[k]);
+   [a.x*2,a.y*2,b.x*2,b.y*2].forEach((expected,j)=>expect(Math.abs(paths[i][j]-expected)).toBeLessThanOrEqual(2));
+  }
+ }
+});

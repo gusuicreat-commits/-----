@@ -9,7 +9,7 @@ export function referenceSize(a){
   meters:modern&&Number.isFinite(a.ref_size_m)?a.ref_size_m:defaults[a.ref]};
 }
 function line(g,points,color='#ffffff'){const m=new THREE.Line(new THREE.BufferGeometry().setFromPoints(points.map(p=>new THREE.Vector3(...p))),new THREE.LineBasicMaterial({color}));g.add(m);}
-export function setup(ctx,shot){const a=ctx.timeline.analogies?.[shot.params.analogy];if(!a)throw new Error('类比参数不存在');const g=new THREE.Group();g.userData.a=a;const ref=referenceSize(a).meters,r=new THREE.Group();g.add(r);g.userData.ref=r;
+export function setup(ctx,shot){if(shot.bg)return;const a=ctx.timeline.analogies?.[shot.params.analogy];if(!a)throw new Error('类比参数不存在');const g=new THREE.Group();g.userData.a=a;const ref=referenceSize(a).meters,r=new THREE.Group();g.add(r);g.userData.ref=r;
  if(a.ref==='football_field'){box(r,ref,.12,ref*68/105,0,.05,0,'#28654a');const w=ref/2-1,d=ref*68/105/2-1;line(r,[[-w,.15,-d],[w,.15,-d],[w,.15,d],[-w,.15,d],[-w,.15,-d]]);line(r,[[0,.15,-d],[0,.15,d]]);const pts=[];for(let i=0;i<=64;i++){const v=i/64*Math.PI*2;pts.push([Math.sin(v)*9.15,.16,Math.cos(v)*9.15]);}line(r,pts);for(const x of [-w,w]){line(r,[[x,.2,-3.66],[x,2.44,-3.66],[x,2.44,3.66],[x,.2,3.66]]);line(r,[[x-Math.sign(x)*16.5,.16,-20],[x,.16,-20],[x,.16,20],[x-Math.sign(x)*16.5,.16,20],[x-Math.sign(x)*16.5,.16,-20]]);}}
  else if(a.ref==='building_floor'){
   const floors=Math.max(1,Math.ceil(a.ratio)),height=Math.max(.1,a.ratio)*ref;
@@ -75,6 +75,7 @@ function dimension(ctx,start,end,color,heightAxis){
  return `<g class="dimension" style="--dimension-color:${color}"><path d="M ${a.x} ${a.y} L ${b.x} ${b.y} ${ticks}"/></g>`;
 }
 export function render(ctx,shot,t,dur){
+ if(shot.bg)return;
  const g=ctx.groups.get(shot.id),a=g.userData.a;g.visible=true;
  const crane=new THREE.Box3().setFromObject(ctx.model.getObjectByName('crane')||ctx.model),girder=new THREE.Box3().setFromObject(ctx.model.getObjectByName('girder')||ctx.model),ref=new THREE.Box3().setFromObject(g.userData.ref);
  const heightAxis=a.axis==='height';
@@ -125,4 +126,31 @@ export function render(ctx,shot,t,dur){
  const {rects}=layout();
  nodes.forEach((node,i)=>Object.assign(node.style,{left:`${rects[i].x}px`,top:`${rects[i].y}px`,transform:'none',marginLeft:'0'}));
  ctx.labels.innerHTML=`<g opacity="${opacity}">${dimensions.map(([start,end,,color])=>dimension(ctx,start,end,color,heightAxis)).join('')}</g>`;
+}
+
+
+export function renderBackground(ctx,shot,t,dims){
+ const a=ctx.timeline.analogies?.[shot.params.analogy];
+ if(!a)throw new Error('类比参数不存在');
+ const vertical=a.ref==='building_floor',f=ctx.timeline.facts?.[a.fact],size=referenceSize(a),opacity=clamp(t/.6);
+ const refText=vertical?`参照 ${Number(a.ratio.toFixed(2))} 层 × ${size.size} ${size.unit}`:`参照 ${size.size} ${size.unit}`;
+ const pairs=vertical?[['crane_bottom','crane_top'],['ref_bottom','ref_top']]:[['crane_left','crane_right'],['ref_left','ref_right']];
+ const dimensions=pairs.map(([start,end],i)=>{
+  if(!dims[start]||!dims[end])throw new Error('写实类比缺少尺寸端点');
+  return [dims[start],dims[end],i?refText:`${f?.name||(vertical?'整机高度':'主梁长度')} ${f?.value??''} ${f?.unit||'m'}`,i?'#38d1ff':'#ff8a1f'];
+ });
+ ctx.content.innerHTML=`<div class="section-title analogy-title"><small>尺度对照 / 等比例</small>${vertical?'把高度放回日常':'把长度放回日常'}</div><div class="analogy-copy" style="opacity:${opacity}">${esc(a.text)}<small>参照尺寸 ${esc(size.size)} ${esc(size.unit)} · 按真实比例呈现</small></div>`+
+  dimensions.map(([, ,text,color])=>`<div class="dimension-label" style="left:0;top:0;--dimension-color:${color};opacity:${opacity}">${esc(text)}</div>`).join('');
+ const nodes=[...(ctx.content.querySelectorAll?.('.dimension-label')||[])];
+ const segments=dimensions.map(([start,end])=>[start,end]),obstacles=[];
+ dimensions.forEach(([start,end],i)=>{
+  const node=nodes[i];if(!node)return;
+  const rect=placeDimensionLabel(start,end,node.offsetWidth||340,node.offsetHeight||36,
+   vertical?(i?'right':'left'):'center',segments,obstacles);
+  obstacles.push(rect);node.style.left=`${rect.x}px`;node.style.top=`${rect.y}px`;node.style.transform='none';
+ });
+ ctx.labels.innerHTML=`<g opacity="${opacity}">${dimensions.map(([a,b,,color],i)=>{
+  const tick=8,ticks=vertical?`M ${a.x-tick} ${a.y} h ${tick*2} M ${b.x-tick} ${b.y} h ${tick*2}`:`M ${a.x} ${a.y-tick} v ${tick*2} M ${b.x} ${b.y-tick} v ${tick*2}`;
+  return `<g class="dimension" data-dimension="${i?'ref':'crane'}" style="--dimension-color:${color}"><path d="M ${a.x} ${a.y} L ${b.x} ${b.y} ${ticks}"/></g>`;
+ }).join('')}</g>`;
 }
