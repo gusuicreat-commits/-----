@@ -80,7 +80,7 @@ test('长度类比左端对齐、轨道外留六米且双物体位于安全区',
    expect(footprint.min.z-reference.max.z).toBeCloseTo(6,5);
    for(const bounds of [crane,reference]){const p=projectedBounds(ctx,bounds);expect(p.left).toBeGreaterThanOrEqual(.08);expect(p.right).toBeLessThanOrEqual(.92);expect(p.top).toBeGreaterThanOrEqual(.08);expect(p.bottom).toBeLessThanOrEqual(.92);}
    const p=projectedBounds(ctx,crane.clone().union(reference));
-   expect(p.right-p.left).toBeGreaterThanOrEqual(.6);expect(p.right-p.left).toBeLessThanOrEqual(.75);
+   expect(p.right-p.left).toBeGreaterThanOrEqual(.45);expect(p.right-p.left).toBeLessThanOrEqual(.75);
    const direction=ctx.camera.getWorldDirection(new ctx.THREE.Vector3());
    const elevation=ctx.THREE.MathUtils.radToDeg(Math.asin(-direction.y));
    expect(elevation).toBeGreaterThanOrEqual(30);expect(elevation).toBeLessThanOrEqual(40);expect(Math.abs(direction.x)).toBeGreaterThan(.1);
@@ -98,7 +98,8 @@ test('高度类比与支腿并排、同地面且标注双高度',async()=>{
   expect(reference.min.y).toBeCloseTo(crane.min.y,5);expect(reference.min.x-crane.max.x).toBeCloseTo(6,5);expect(crane.intersectsBox(reference)).toBe(false);
   expect((ctx.labels.innerHTML.match(/class="dimension"/g)||[]).length).toBe(2);
   const p=projectedBounds(ctx,crane.clone().union(reference));
-  expect(p.bottom-p.top).toBeGreaterThanOrEqual(.55);expect(p.bottom-p.top).toBeLessThanOrEqual(.70);
+  // 安全区必须为两侧中点标签保留宽度，不再强制占满画面高度。
+  expect(p.bottom-p.top).toBeGreaterThanOrEqual(.35);expect(p.bottom-p.top).toBeLessThanOrEqual(.70);
   expect(ctx.content.innerHTML).toContain('整机高度 51 m');
   expect(ctx.content.innerHTML).toContain(ref==='building_floor'?'参照 17 层 × 3 m':'参照 1.75 m');
  }
@@ -501,6 +502,8 @@ test('所有镜头眉题有深色底片且切镜保持一致',async({page})=>{
 });
 
 test('爆炸镜头实际标签无引线交叉且避开标题字幕',async({page})=>{
+ const ctx=await geometryContext(),module=await import('../player/shots/exploded.js'),{projectBounds}=await import('../player/shots/common.js');
+ const shot=fixture.shots.find(s=>s.kind==='exploded');
  for(const viewport of [{width:1920,height:1080},{width:1366,height:768}]){
   await page.setViewportSize(viewport);await ready(page);
   for(const t of [20.1,21,22.5,24.9,21]){
@@ -508,6 +511,18 @@ test('爆炸镜头实际标签无引线交叉且避开标题字幕',async({page}
    const labels=explodedLabels(await page.locator('#labels').innerHTML());
    expect(labels).toHaveLength(5);assertLeadersSeparate(labels);
    await expect(page.locator('#labels [data-part="cab"] text')).toHaveText('司机室');
+   const stage=(await page.locator('#stage').boundingBox())!,scale=stage.width/1920,measured={};
+   for(const selector of ['#badge','.section-title','#film-title','#caption','footer']){
+    const r=await page.locator(selector).boundingBox();if(r)measured[selector]={x:(r.x-stage.x)/scale,y:(r.y-stage.y)/scale,width:r.width/scale,height:r.height/scale};
+   }
+   mockHud(ctx,measured);for(const o of ctx.originals)o.n.position.copy(o.p);module.render(ctx,shot,t-shot.start,shot.end-shot.start);
+   const tb=new ctx.THREE.Box3().setFromObject(ctx.model.getObjectByName('trolley')),gb=new ctx.THREE.Box3().setFromObject(ctx.model.getObjectByName('girder'));
+   const tr=projectBounds(ctx,tb),gr=projectBounds(ctx,gb),anchor=tb.getCenter(new ctx.THREE.Vector3()).project(ctx.camera);
+   const trolley=labels.find(v=>v.id==='trolley')!,girder=labels.find(v=>v.id==='girder')!;
+   expect(trolley.x).toBeCloseTo((anchor.x+1)*960,4);expect(trolley.y).toBeCloseTo((1-anchor.y)*540,4);
+   expectInside({x:trolley.x,y:trolley.y,width:0,height:0},tr);
+   expect(rectanglesOverlap(tr,gr)).toBe(false);expect(lineTouchesRect(trolley,trolley,gr)).toBe(false);
+   expect(Math.hypot(trolley.x-girder.x,trolley.y-girder.y)).toBeGreaterThanOrEqual(24);
    const title=(await page.locator('.section-title').boundingBox())!,badge=(await page.locator('#badge').boundingBox())!,caption=await page.locator('#caption').boundingBox();
    const rects=[];
    for(const label of await page.locator('#labels [data-part] rect').all()){
@@ -515,6 +530,117 @@ test('爆炸镜头实际标签无引线交叉且避开标题字幕',async({page}
     for(const obstacle of [title,badge,caption,...rects].filter(Boolean))expect(rectanglesOverlap(rect,obstacle)).toBe(false);
     rects.push(rect);
    }
+  }
+ }
+});
+
+function mockHud(ctx,rects,scale=1){
+ const origin={x:13,y:9,width:1920*scale,height:1080*scale};
+ const nodes=Object.fromEntries(Object.entries(rects).map(([selector,r]:[string,any])=>[selector,{textContent:'',getBoundingClientRect:()=>({x:origin.x+r.x*scale,y:origin.y+r.y*scale,width:r.width*scale,height:r.height*scale})}]));
+ (ctx.content as any).ownerDocument={getElementById:id=>id==='stage'?{getBoundingClientRect:()=>origin,querySelector:selector=>nodes[selector]}:nodes[`#${id}`]};
+ return nodes;
+}
+const hudRects={
+ '#badge':{x:64,y:50,width:470,height:60},'.section-title':{x:76,y:124,width:400,height:92},
+ '#film-title':{x:1450,y:65,width:400,height:40},'#caption':{x:170,y:826,width:1580,height:158},
+ 'footer':{x:64,y:1005,width:1792,height:45},'.analogy-copy':{x:80,y:850,width:800,height:70},
+};
+function expectInside(rect,safe){
+ expect(rect.x).toBeGreaterThanOrEqual(safe.x-1e-5);expect(rect.y).toBeGreaterThanOrEqual(safe.y-1e-5);
+ expect(rect.x+rect.width).toBeLessThanOrEqual(safe.x+safe.width+1e-5);expect(rect.y+rect.height).toBeLessThanOrEqual(safe.y+safe.height+1e-5);
+}
+test('安全区按实际HUD矩形换算画布坐标并同步当前字幕',async()=>{
+ const {hudSafeArea}=await import('../player/shots/layout.js');
+ for(const scale of [1,1366/1920,.5]){
+  const ctx=await geometryContext(),nodes=mockHud(ctx,hudRects,scale);
+  ctx.timeline.captions=[{start:11,end:13,text:'两行字幕\n第二行'}];
+  const safe=hudSafeArea(ctx,{start:10},2);
+  expect(safe).toMatchObject({x:40,y:232,width:1840,height:578});
+  expect(nodes['#caption'].textContent).toBe('两行字幕\n第二行');
+  expect(nodes['#badge'].textContent).toBe('三维模型渲染 · 参数化重建');
+  hudSafeArea(ctx,{start:10},0);expect(nodes['#caption'].textContent).toBe('');
+ }
+});
+test('S2高度尺寸线和中点标签及整体投影均在HUD安全区',async()=>{
+ const module=await import('../player/shots/analogy.js'),{hudSafeArea}=await import('../player/shots/layout.js');
+ for(const width of [220,340,480])for(const titleHeight of [65,130]){
+  const ctx=await geometryContext();mockHud(ctx,{...hudRects,'.section-title':{...hudRects['.section-title'],height:titleHeight}},1366/1920);
+  ctx.timeline.analogies.height={ref:'building_floor',axis:'height',ref_size_m:3,ratio:17,fact:'F_overall_height',text:'相当于17层楼的高度'};
+  const shot={id:'height',start:10,params:{analogy:'height'}};module.setup(ctx,shot);
+  const nodes=[0,1].map(()=>({offsetWidth:width,offsetHeight:36,style:{}}));(ctx.content as any).querySelectorAll=()=>nodes;
+  let snapshot='';
+  for(const t of [2.5,0,4.9,2.5]){
+   module.render(ctx,shot,t,5);const safe=hudSafeArea(ctx,shot,t);
+   const paths=[...ctx.labels.innerHTML.matchAll(/<path d="([^"]+)"/g)].map(m=>pathSegments(m[1]));
+   for(const [i,node] of nodes.entries()){
+    const rect={x:parseFloat((node.style as any).left),y:parseFloat((node.style as any).top),width,height:36};expectInside(rect,safe);
+    const [a,b]=paths[i][0];expect(rect.y+18).toBeCloseTo((a.y+b.y)/2,5);
+    if(i===0)expect(rect.x+width).toBeLessThan(a.x-10);else expect(rect.x).toBeGreaterThan(a.x+10);
+    expect(b.y-(124+titleHeight)).toBeGreaterThanOrEqual(16);
+    for(const obstacle of safe.obstacles){expect(rectanglesOverlap(rect,obstacle)).toBe(false);for(const [p,q] of paths.flat())expect(lineTouchesRect(p,q,obstacle)).toBe(false);}
+   }
+   for(const point of paths.flat(2))expectInside({...point,width:0,height:0},safe);
+   for(const object of [ctx.model.getObjectByName('crane'),ctx.groups.get(shot.id).userData.ref]){
+    const p=projectedBounds(ctx,new ctx.THREE.Box3().setFromObject(object));expectInside({x:p.left*1920,y:p.top*1080,width:(p.right-p.left)*1920,height:(p.bottom-p.top)*1080},safe);
+   }
+   if(t===2.5){if(snapshot)expect(ctx.labels.innerHTML).toBe(snapshot);snapshot=ctx.labels.innerHTML;}
+  }
+ }
+});
+test('爆炸小车Box3中心锚点与主梁分离且间距至少24像素',async()=>{
+ const module=await import('../player/shots/exploded.js'),{projectBounds}=await import('../player/shots/common.js'),{hudSafeArea}=await import('../player/shots/layout.js');
+ const ctx=await geometryContext(),shot=fixture.shots.find(s=>s.kind==='exploded');
+ mockHud(ctx,{...hudRects,'.section-title':{x:76,y:154,width:500,height:104}});
+ for(const t of [0,.1,1,2.5,4.9,5,2.5]){
+  for(const o of ctx.originals)o.n.position.copy(o.p);
+  module.render(ctx,shot,t,5);
+  const labels=explodedLabels(ctx.labels.innerHTML),trolley=labels.find(v=>v.id==='trolley')!,girder=labels.find(v=>v.id==='girder')!;
+  const tb=new ctx.THREE.Box3().setFromObject(ctx.model.getObjectByName('trolley')),gb=new ctx.THREE.Box3().setFromObject(ctx.model.getObjectByName('girder'));
+  const tr=projectBounds(ctx,tb),gr=projectBounds(ctx,gb),anchor=tb.getCenter(new ctx.THREE.Vector3()).project(ctx.camera);
+  expect(trolley.x).toBeCloseTo((anchor.x+1)*960,5);expect(trolley.y).toBeCloseTo((1-anchor.y)*540,5);
+  expectInside({x:trolley.x,y:trolley.y,width:0,height:0},tr);
+  expect(rectanglesOverlap(tr,gr)).toBe(false);expect(lineTouchesRect(trolley,trolley,gr)).toBe(false);
+  expect(gr.y-tr.y-tr.height).toBeGreaterThanOrEqual(24);
+  const safe=hudSafeArea(ctx,shot,t);
+  for(const label of labels)expectInside({x:label.labelX,y:label.labelY,width:210,height:50},safe);
+  expect(Math.hypot(trolley.x-girder.x,trolley.y-girder.y)).toBeGreaterThanOrEqual(24);
+  assertLeadersSeparate(labels);
+ }
+});
+
+test('S2双分辨率真实HUD避让与中点标签在乱序定位后保持一致',async({page})=>{
+ const data=structuredClone(fixture);
+ data.analogies.A_length={ref:'building_floor',axis:'height',ref_size_m:3,ratio:17,fact:'F_overall_height',text:'相当于17层楼的高度'};
+ data.captions=[{start:11,end:14,text:'把高度放回日常\n每层楼以3米作参照'}];
+ await page.route('**/height-safe.json',route=>route.fulfill({json:data}));
+ for(const viewport of [{width:1920,height:1080},{width:1366,height:768}]){
+  await page.setViewportSize(viewport);await page.goto('/player/index.html?timeline=/fixtures/height-safe.json&mode=render');await page.waitForFunction(()=>!!window.__player);await page.evaluate(()=>window.__player.ready);
+  let snapshot='';
+  for(const t of [12.5,7,10,14.9,12.5]){
+   await page.evaluate(t=>window.__player.seek(t),t);if(t===7)continue;
+   const stage=(await page.locator('#stage').boundingBox())!,scale=stage.width/1920;
+   const convert=r=>({x:(r.x-stage.x)/scale,y:(r.y-stage.y)/scale,width:r.width/scale,height:r.height/scale});
+   const obstacles=[];
+   for(const selector of ['#badge','.section-title','#film-title','#caption','footer','.analogy-copy']){
+    const rect=await page.locator(selector).boundingBox();if(rect)obstacles.push(convert(rect));
+   }
+   const title=convert((await page.locator('.section-title').boundingBox())!);
+   const paths=await page.locator('#labels .dimension path').evaluateAll(nodes=>nodes.map(n=>n.getAttribute('d')!));
+   const segments=paths.flatMap(pathSegments),labels=[];
+   for(const [i,label] of (await page.locator('.dimension-label').all()).entries()){
+    const rect=convert((await label.boundingBox())!);labels.push(rect);
+    const [a,b]=pathSegments(paths[i])[0];expect(rect.y+rect.height/2).toBeCloseTo((a.y+b.y)/2,1);
+    expect(b.y-title.y-title.height).toBeGreaterThanOrEqual(16);
+    if(i===0)expect(rect.x+rect.width).toBeLessThan(a.x-10);else expect(rect.x).toBeGreaterThan(a.x+10);
+    for(const obstacle of obstacles)expect(rectanglesOverlap(rect,obstacle)).toBe(false);
+   }
+   for(const [a,b] of segments)for(const obstacle of obstacles)expect(lineTouchesRect(a,b,obstacle)).toBe(false);
+   const top=Math.max(196,...obstacles.slice(0,3).map(r=>r.y+r.height))+16;
+   const bottom=Math.min(880,...obstacles.slice(3).map(r=>r.y))-16;
+   const safe={x:40,y:top,width:1840,height:bottom-top};
+   for(const rect of labels)expectInside(rect,safe);
+   for(const point of segments.flat())expectInside({...point,width:0,height:0},safe);
+   if(t===12.5){const actual=JSON.stringify({paths,labels});if(snapshot)expect(actual).toBe(snapshot);snapshot=actual;}
   }
  }
 });

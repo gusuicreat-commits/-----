@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {box,mesh,frameParallel,esc,clamp,projectBounds} from './common.js';
-import {placeDimensionLabel} from './layout.js';
+import {placeDimensionLabel,hudSafeArea,fitProjection,enclosingRect} from './layout.js';
 const defaults={football_field:105,building_floor:3,boeing747:64.4,hair:.00007,person:1.75,bus:12};
 export function referenceSize(a){
  const unit=a.ref==='hair'?'mm':'m',size=a.ref==='hair'?.07:defaults[a.ref];
@@ -95,22 +95,34 @@ export function render(ctx,shot,t,dur){
   dimensions[1][0]=g.userData.ref.localToWorld(new THREE.Vector3(-32.2,7.5,15));
   dimensions[1][1]=g.userData.ref.localToWorld(new THREE.Vector3(32.2,7.5,15));
  }
- const segments=dimensions.flatMap(([start,end])=>{
-  const a=screen(ctx,start),b=screen(ctx,end),tick=8;
-  return [[a,b],...[a,b].map(p=>heightAxis?[{x:p.x-tick,y:p.y},{x:p.x+tick,y:p.y}]:[{x:p.x,y:p.y-tick},{x:p.x,y:p.y+tick}])];
- });
- const labels=dimensions.map(([start,end,text,color],index)=>({
-  a:screen(ctx,start),b:screen(ctx,end),text,color,side:heightAxis?(index===0?'left':'right'):'center',
- }));
  const opacity=clamp(t/.6);
  ctx.content.innerHTML=`<div class="section-title analogy-title"><small>尺度对照 / 等比例</small>${heightAxis?'把高度放回日常':'把长度放回日常'}</div><div class="analogy-copy" style="opacity:${opacity}">${esc(a.text)}<small>参照尺寸 ${esc(size.size)} ${esc(size.unit)} · 按真实比例呈现</small></div>`+
-  labels.map(p=>`<div class="dimension-label ${p.side}" style="left:0;top:0;--dimension-color:${p.color};opacity:${opacity}">${esc(p.text)}</div>`).join('');
- // 测量真实字体后避开所有尺寸线、小车与已放置标签。
- const trolley=ctx.model.getObjectByName('trolley');
- const obstacles=trolley?[projectBounds(ctx,new THREE.Box3().setFromObject(trolley))]:[];
- for(const [i,node] of [...(ctx.content.querySelectorAll?.('.dimension-label')||[])].entries()){
-  const p=labels[i],rect=placeDimensionLabel(p.a,p.b,node.offsetWidth,node.offsetHeight,p.side,segments,obstacles);
-  Object.assign(node.style,{left:`${rect.x}px`,top:`${rect.y}px`,transform:'none',marginLeft:'0'});obstacles.push(rect);
+  dimensions.map(([, ,text,color],i)=>`<div class="dimension-label ${heightAxis?(i===0?'left':'right'):'center'}" style="left:0;top:0;--dimension-color:${color};opacity:${opacity}">${esc(text)}</div>`).join('');
+ const nodes=[...(ctx.content.querySelectorAll?.('.dimension-label')||[])];
+ const safe=hudSafeArea(ctx,shot,t);
+ const layout=()=>{
+  const segments=dimensions.flatMap(([start,end])=>{
+   const a=screen(ctx,start),b=screen(ctx,end),tick=10;
+   return [[a,b],...[a,b].map(p=>heightAxis?[{x:p.x-tick,y:p.y},{x:p.x+tick,y:p.y}]:[{x:p.x,y:p.y-tick},{x:p.x,y:p.y+tick}])];
+  });
+  const trolley=ctx.model.getObjectByName('trolley');
+  const obstacles=trolley?[projectBounds(ctx,new THREE.Box3().setFromObject(trolley))]:[];
+  const rects=dimensions.map(([start,end],i)=>{
+   const a=screen(ctx,start),b=screen(ctx,end),width=nodes[i]?.offsetWidth||340,height=nodes[i]?.offsetHeight||36;
+   // 高度标签严格固定在中点外侧；取景为文字预留空间，不向上挪标签。
+   const rect=heightAxis?{x:i===0?a.x-width-14:a.x+14,y:(a.y+b.y-height)/2,width,height}:
+    placeDimensionLabel(a,b,width,height,'center',segments,obstacles);
+   obstacles.push(rect);return rect;
+  });
+  const geometry=[crane,ref].map(b=>projectBounds(ctx,b));
+  return {rects,bounds:enclosingRect([...geometry,...rects,...segments.flat().map(p=>({x:p.x-2,y:p.y-2,width:4,height:4}))])};
+ };
+ // 缩放后标签仍保持像素字号，因此重新测量外包直到留白稳定。
+ for(let i=0;i<12;i++){
+  const {bounds}=layout();
+  fitProjection(ctx,bounds,{x:safe.x+2,y:safe.y+2,width:safe.width-4,height:safe.height-4});
  }
+ const {rects}=layout();
+ nodes.forEach((node,i)=>Object.assign(node.style,{left:`${rects[i].x}px`,top:`${rects[i].y}px`,transform:'none',marginLeft:'0'}));
  ctx.labels.innerHTML=`<g opacity="${opacity}">${dimensions.map(([start,end,,color])=>dimension(ctx,start,end,color,heightAxis)).join('')}</g>`;
 }
