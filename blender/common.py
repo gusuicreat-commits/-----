@@ -346,3 +346,74 @@ def solve_exposure(measure: Any, initial: float = 0.0) -> tuple[float, dict[str,
         raise ValueError("测光失败：曝光范围内无法保留门机高光")
     return exposure, {**stats, "highlight_limited":highlight_limited,
                       "display_evaluations":evaluations}
+
+
+def title_camera(dim: Dimensions, time_s: float, width: int = 1920, height: int = 1080,
+                 points: list[Vec3] | None = None) -> tuple[Vec3, Vec3, tuple[float, float]]:
+    """开场画宽初始 50%，中心固定在右侧；六秒内沿视线推近 6%。"""
+    points = framing_points(dim) if points is None else points
+    target = dim.center
+    angle, elevation = math.radians(35 - 12), math.radians(12)
+    direction = (math.sin(angle)*math.cos(elevation), math.sin(elevation),
+                 math.cos(angle)*math.cos(elevation))
+    fov = hero_fov_y(width, height)
+    def pose(distance: float) -> Vec3:
+        return tuple(t+d*distance for t,d in zip(target,direction))
+    def projected(distance: float) -> list[dict[str, Any]]:
+        return [project_point(p,pose(distance),target,width,height,fov) for p in points]
+    low, high = .01, max(dim.bbox)*4
+    for _ in range(48):
+        mid = (low+high)/2
+        pts = projected(mid)
+        if any(p["depth_m"] <= .01 for p in pts) or (max(p["x"] for p in pts)-min(p["x"] for p in pts))/width > .5:
+            low = mid
+        else:
+            high = mid
+    distance = high * (1 - .06*max(0.0,min(1.0,time_s/6)))
+    pts = projected(distance)
+    cx = (max(p["x"] for p in pts)+min(p["x"] for p in pts))/2/width
+    cy = (max(p["y"] for p in pts)+min(p["y"] for p in pts))/2/height
+    # 位移以屏幕比例表示，由调用端换成镜头偏移。
+    return pose(distance), target, (.70-cx, .56-cy)
+
+
+def motion_state(dim: Dimensions, params: Mapping[str, Any], time_s: float,
+                 duration: float) -> dict[str, Any]:
+    axis = params.get("axis")
+    if axis not in {"trolley", "hoist", "gantry"}:
+        raise ValueError("运动轴必须是 trolley、hoist 或 gantry")
+    start, end = float(params["from_m"]), float(params["to_m"])
+    if not all(math.isfinite(v) for v in (start,end,time_s,duration)) or duration <= 0:
+        raise ValueError("运动参数必须有限，时长必须大于零")
+    value = start+(end-start)*ease(time_s/duration)
+    hook = value if axis == "hoist" else dim.hook_height
+    # 钢丝绳端点随滑轮组运动，顶部固定在小车。
+    top = dim.girder_top+1
+    bottom = hook+3.9
+    old_bottom = dim.hook_height+3.9
+    scale = max(.01,top-bottom)/(top-old_bottom)
+    return {"axis":axis,"value":value,"crane":(0.0,0.0,value if axis == "gantry" else 0.0),
+            "trolley_x":value if axis == "trolley" else 0.0,"hook_height":hook,
+            "rope_scale":scale,"rope_offset":(1-scale)*(top-dim.girder_top)}
+
+
+def motion_camera(dim: Dimensions, offset: Vec3 = (0.0,0.0,0.0), width: int = 1920,
+                  height: int = 1080, points: list[Vec3] | None = None) -> tuple[Vec3, Vec3]:
+    """固定 24°、机位离地 8 m，视点沿主梁偏 10 m；大车时同步跟随。"""
+    points = framing_points(dim) if points is None else points
+    angle = math.radians(24)
+    target = (10.0,dim.height/2,0.0)
+    fov = hero_fov_y(width,height)
+    def pose(distance: float) -> Vec3:
+        return (10+math.sin(angle)*distance,8.0,math.cos(angle)*distance)
+    low,high = .01,max(dim.bbox)*4
+    for _ in range(48):
+        mid = (low+high)/2
+        projected = [project_point(p,pose(mid),target,width,height,fov) for p in points]
+        fits = all(p["depth_m"] > .01 and .08*width <= p["x"] <= .92*width
+                   and .10*height <= p["y"] <= .84*height for p in projected)
+        if fits:
+            high = mid
+        else:
+            low = mid
+    return (tuple(p+d for p,d in zip(pose(high),offset)), tuple(p+d for p,d in zip(target,offset)))

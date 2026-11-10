@@ -19,6 +19,7 @@ from app import config, events, storage
 from app.ingest.facts import FactPatch, extract_facts, update_fact
 from app.llm import LLMError
 from app.agent import orchestrator, planner
+from app.media.blender import blender_executable
 
 app = FastAPI(title="起重机科普视频智能体")
 logger = logging.getLogger(__name__)
@@ -76,7 +77,23 @@ def get_projects() -> list[dict]:
 
 @app.get("/api/projects/{pid}")
 def get_project(pid: str) -> dict:
-    return storage.read_json(pid, "project.json")
+    project = storage.read_json(pid, "project.json")
+    return {**project, "render_mode": project.get("render_mode", "standard"),
+            "blender_available": blender_executable() is not None}
+
+
+class SettingsInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    render_mode: Literal["standard", "photoreal"]
+
+
+@app.patch("/api/projects/{pid}/settings")
+def patch_settings(pid: str, body: SettingsInput) -> dict:
+    with storage.LOCK:
+        project = storage.read_json(pid, "project.json")
+        project["render_mode"] = body.render_mode
+        storage.write_json(pid, "project.json", project)
+    return get_project(pid)
 
 
 @app.get("/api/projects/{pid}/llm")

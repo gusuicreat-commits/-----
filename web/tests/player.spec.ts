@@ -830,3 +830,39 @@ test('T13b背景采样竖条不包含模型或类比参照物',async()=>{
   }
  }
 });
+
+test('T16写实背景帧锚点与网页三维切换保持确定性',async({page})=>{
+ const requests:string[]=[];page.on('request',request=>requests.push(request.url()));
+ await page.goto('/player/index.html?timeline=/fixtures/background/timeline.json&mode=render');
+ await page.waitForFunction(()=>!!window.__player);await page.evaluate(()=>window.__player.ready);
+ const bg=page.locator('#bg-frame');
+ for(const [t,frame,x,y] of [[0,1,720,360],[.5,2,840,420],[1.49,3,1080,460],[.25,2,840,420],[0,1,720,360]]){
+  await page.evaluate(t=>window.__player.seek(t),t);
+  await expect(bg).toBeVisible();await expect(bg).toHaveAttribute('src',new RegExp(`frame_0000${frame}\\.jpg$`));
+  await expect(page.locator('#scene')).toHaveCSS('visibility','hidden');
+  await expect(page.locator('#labels [data-part=trolley]')).toHaveCount(0);
+  const dot=page.locator('#labels [data-part=girder] circle');
+  expect(Math.abs(Number(await dot.getAttribute('cx'))-x)).toBeLessThanOrEqual(2);
+  expect(Math.abs(Number(await dot.getAttribute('cy'))-y)).toBeLessThanOrEqual(2);
+  const rgb=await bg.evaluate((img:HTMLImageElement)=>{
+   const canvas=document.createElement('canvas');canvas.width=canvas.height=1;
+   const context=canvas.getContext('2d')!;context.drawImage(img,0,0,1,1);return Array.from(context.getImageData(0,0,1,1).data).slice(0,3);
+  });
+  expect(rgb[frame-1]).toBeGreaterThan(245);for(let c=0;c<3;c++)if(c!==frame-1)expect(rgb[c]).toBeLessThan(10);
+  await expect(page.locator('#badge')).toHaveText('三维模型渲染 · 写实（Blender） · 参数化重建');
+  await expect(page.locator('#caption')).toHaveText('写实背景锚点验证');
+ }
+ expect(requests.some(url=>url.endsWith('frame_00002.jpg'))).toBe(true);
+ expect(requests.some(url=>url.endsWith('frame_00003.jpg'))).toBe(true);
+ await page.evaluate(()=>window.__player.seek(2.5));
+ await expect(page.locator('#content h1')).toHaveText('写实开场');
+ await expect(page.locator('#scene')).toHaveCSS('visibility','hidden');
+ await page.evaluate(()=>window.__player.seek(3.5));
+ await expect(page.locator('#motion-info')).toContainText('×2 倍速');
+ await expect(bg).toBeVisible();
+ await page.evaluate(()=>window.__player.seek(5));
+ await expect(bg).toBeHidden();await expect(page.locator('#scene')).toHaveCSS('visibility','visible');
+ await expect(page.locator('#badge')).toHaveText('三维模型渲染 · 参数化重建');
+ await page.evaluate(()=>window.__player.seek(.5));
+ await expect(bg).toHaveAttribute('src',/frame_00002\.jpg$/);
+});

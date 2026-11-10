@@ -36,3 +36,5 @@
 
 /* 统一眉题底片，适应明暗场景。 */
 .eyebrow,.section-title small{width:fit-content;background:#111a24cc;border-radius:6px;padding:4px 10px}
+
+#bg-frame{position:absolute;inset:0;width:1920px;height:1080px;object-fit:cover;pointer-events:none}
