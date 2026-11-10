@@ -10,3 +10,5 @@
 #issues [data-severity="info"],#issues [data-severity="info"] .issue-item,.shot-issues .info{color:var(--muted)}
 #issues [data-severity="info"] summary{color:var(--muted)}
 .shot-issues .info{background:#19222d}
+
+.render-style{display:flex;flex-direction:column;gap:4px;font-size:12px}.render-style select{max-width:280px}.render-style small{color:var(--muted,#9aa9b8);max-width:280px}

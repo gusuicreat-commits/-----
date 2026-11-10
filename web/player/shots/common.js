@@ -43,11 +43,12 @@ export function projectBounds(ctx,bounds){
  const x=Math.min(...points.map(p=>p.x)),y=Math.min(...points.map(p=>p.y));
  return {x,y,width:Math.max(...points.map(p=>p.x))-x,height:Math.max(...points.map(p=>p.y))-y};
 }
-export function labelNodes(ctx,ids,{splitSides=false,safe}={}){
+export function labelNodes(ctx,ids,{splitSides=false,safe,pointSource}={}){
  ctx.scene.updateMatrixWorld(true);ctx.camera.updateMatrixWorld();
  if(splitSides){
   const center=new THREE.Box3().setFromObject(ctx.model.getObjectByName('crane')||ctx.model).getCenter(new THREE.Vector3());
   const items=[...new Set(ids)].map(id=>{
+   if(pointSource){const point=pointSource(id);return point?{id,...point}:null;}
    const node=ctx.model.getObjectByName(id);if(!node)return null;
    const anchor=partBounds(node).getCenter(new THREE.Vector3());
    return {id,left:anchor.x<center.x,...projectPoint(ctx,anchor)};
@@ -59,6 +60,7 @@ export function labelNodes(ctx,ids,{splitSides=false,safe}={}){
   return;
  }
  const parts=[...new Set([...Object.keys(names),'rope','rail_left','rail_right',...ids])].map(id=>{
+  if(pointSource){const point=pointSource(id);return point?{id,...point}:null;}
   const node=ctx.model.getObjectByName(id);if(!node)return null;
   const bounds=partBounds(node);return {id,...projectPoint(ctx,bounds.getCenter(new THREE.Vector3())),rect:projectBounds(ctx,bounds)};
  }).filter(Boolean);

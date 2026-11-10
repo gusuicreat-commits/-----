@@ -41,7 +41,7 @@ def stages(project, monkeypatch):
     monkeypatch.setattr(o.planner, "repair", record("repair"))
     monkeypatch.setattr(o.validator, "validate", record("validate", {"issues": []}))
     monkeypatch.setattr(o, "synthesize_shots", record("tts"))
-    monkeypatch.setattr(o.timeline, "build_timeline", record("timeline"))
+    monkeypatch.setattr(o.timeline, "build_timeline", record("timeline", {"shots": []}))
     monkeypatch.setattr(o.compose, "render_video", record("render"))
     monkeypatch.setattr(o.compose, "mux", record("compose"))
     monkeypatch.setattr(o.qa, "visual_qa", record("qa"))
@@ -299,3 +299,36 @@ def test_tts_refreshes_analogy_before_speaking(project, monkeypatch):
     analogy = storage.read_json(pid, "shotlist.json")["analogies"][0]
     assert analogy["ratio"] == 2
     assert spoken == [analogy["text"]] and spoken != ["旧类比"]
+
+
+@pytest.mark.parametrize('mode,fail', [('photoreal',False),('photoreal',True),('standard',False)])
+def test_render_backgrounds_are_written_only_to_timeline(stages, monkeypatch, mode, fail):
+    pid,calls = stages
+    project = storage.read_json(pid, 'project.json')
+    storage.write_json(pid, 'project.json', {**project,'render_mode':mode})
+    storage.write_json(pid, 'facts.json', {'facts':[]})
+    shots = [{'id':'S1','kind':'title','params':{},'start':0,'end':.1},
+             {'id':'S2','kind':'outro','params':{},'start':.1,'end':.2}]
+    storage.write_json(pid, 'shotlist.json', {'shots':shots})
+    def build(_):
+        calls.append('timeline')
+        return {'fps':30,'shots':deepcopy(shots)}
+    monkeypatch.setattr(o.timeline, 'build_timeline', build)
+    monkeypatch.setattr(o.blender, 'blender_executable', lambda:'/blender')
+    def render(args, timeout, progress):
+        if fail:
+            raise RuntimeError('模拟失败')
+        directory = Path(args[args.index('--out')+1])
+        (directory/'anchors.json').write_text('{}')
+        for i in range(1,4):
+            (directory/f'frame_{i:05d}.jpg').write_bytes(b'frame')
+    monkeypatch.setattr(o.blender, '_render', render)
+    observed = []
+    monkeypatch.setattr(o.compose, 'render_video', lambda *a,**kw:observed.append(storage.read_json(pid,'timeline.json')))
+    o.start_run(pid, from_stage='render', base_url='http://127.0.0.1:8031')
+    assert storage.read_json(pid, 'run.json')['state'] == 'done'
+    assert len(observed) == 1
+    assert ('bg' in observed[0]['shots'][0]) == (mode == 'photoreal' and not fail)
+    assert 'bg' not in observed[0]['shots'][1]
+    assert storage.read_json(pid, 'shotlist.json') == {'shots':shots}
+    assert any(e['status']=='warn' and e['tool']=='render.blender' for e in events.read_events(pid)) == fail

@@ -1,0 +1,1 @@
+{"version":1,"width":960,"height":540,"fps":2,"frames":[{"frame":1,"nodes":{"girder":{"x":360,"y":180,"visible":true},"trolley":{"x":500,"y":200,"visible":false}}},{"frame":2,"nodes":{"girder":{"x":420,"y":210,"visible":true},"trolley":{"x":500,"y":200,"visible":false}}},{"frame":3,"nodes":{"girder":{"x":540,"y":230,"visible":true},"trolley":{"x":500,"y":200,"visible":false}}}]}

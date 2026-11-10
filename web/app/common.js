@@ -25,7 +25,7 @@ export function mergeEvents(events) {
   const calls = [], open = new Map();
   for (const event of events) {
     const key = `${event.run}:${event.tool}:${event.detail?.shot || ''}`;
-    const progress = event.tool === 'render.player' && (event.detail?.progress != null || event.detail?.frame != null);
+    const progress = ['render.player','render.blender'].includes(event.tool) && (event.detail?.progress != null || event.detail?.frame != null);
     let item = open.get(key);
     if (event.status === 'start' && !progress) {
       item = {...event, started: event.ts, updates: [event]}; calls.push(item); open.set(key, item);

@@ -170,12 +170,12 @@ def ship_block(g: Geometry) -> None:
 def ground_disk(g: Geometry, dock_x: float) -> None:
     """8 km 圆盘保留矩形船坞开口；射线连接内外边界，避免重叠地面。"""
     angles = sorted({i*math.tau/256 for i in range(256)} |
-                    {math.atan2(z,x) % math.tau for x in (-30,30) for z in (-100,100)})
+                    {math.atan2(z,x) % math.tau for x in (-30,30) for z in (-60,60)})
     vertices = []
     for angle in angles:
         dx, dz = math.cos(angle), math.sin(angle)
         inner = min(30/abs(dx) if abs(dx)>1e-10 else math.inf,
-                    100/abs(dz) if abs(dz)>1e-10 else math.inf)
+                    60/abs(dz) if abs(dz)>1e-10 else math.inf)
         outer = -dock_x*dx + math.sqrt(8000**2-dock_x**2*dz**2)
         vertices.extend(((dock_x+inner*dx,0,inner*dz), (dock_x+outer*dx,0,outer*dz)))
     count = len(angles)
@@ -194,14 +194,15 @@ def foreground(g: Geometry, dim: Dimensions) -> None:
                 g.box("plate_rust", (12,.025,.035), (x,y+.07,z+side*1.48), "rust")
         # 板垛总高 1.2 m，细缝分层。
     x,z = dim.span*.43, 60
-    g.box("transport_flatbed", (9.4,.4,3), (x-1.3,1.15,z), "plate")
+    g.box("transport_flatbed", (9.4,.4,3), (x-1.3,1.35,z), "plate")
     g.box("transport_cab", (2.6,2.3,2.8), (x+4.7,1.85,z), "yellow")
     g.box("transport_window", (1.8,.85,.04), (x+4.7,2.35,z+1.42), "glass")
     g.box("transport_windscreen", (.04,.85,2.35), (x+6.02,2.35,z), "glass")
+    g.box("transport_chassis", (12,.3,2.4), (x,1.05,z), "metal")
     for axle in (-4,-2.5,4.7):
         for side in (-1,1):
-            g.cylinder("transport_wheels", (x+axle,.65,z+side*1.2),
-                       (x+axle,.65,z+side*1.65), .65, "rubber", 16)
+            g.cylinder("transport_wheels", (x+axle,.52,z+side*.92),
+                       (x+axle,.52,z+side*1.38), .52, "rubber", 16)
 
 
 def warehouses(g: Geometry) -> None:
@@ -253,10 +254,10 @@ def yard(g: Geometry, dim: Dimensions) -> None:
     dock_x, half = -dim.span/2-70, 30
     left, right = dock_x-half, dock_x+half
     ground_disk(g,dock_x)
-    g.box("water", (60,.05,200), (dock_x,-1.4,0), "water")
+    g.box("water", (60,.05,120), (dock_x,-1.4,0), "water")
     for x in (left,right):
-        g.box("dock", (.8,5.0,200), (x,-2.5,0), "concrete")
-    for z in (-100,100):
+        g.box("dock", (.8,5.0,120), (x,-2.5,0), "concrete")
+    for z in (-60,60):
         g.box("dock", (60,5,.8), (dock_x,-2.5,z), "concrete")
     for x in (-dim.span/2,dim.span/2):
         g.box("foundation", (1.2,.35,220), (x,-.155,20), "foundation")

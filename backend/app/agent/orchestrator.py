@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from app import events, storage
 from app.ingest import facts as ingest
-from app.media import compose, tts
+from app.media import blender, compose, tts
 from app.model3d import parametric, rig, step
 from . import planner, validator, timeline, qa, report
 from .text import resolve
@@ -132,7 +132,13 @@ def _execute(pid: str, state: dict, *, from_stage: str | None, force: bool, base
                 elif stage == "tts":
                     synthesize_shots(pid, run)
                 elif stage == "render":
-                    timeline.build_timeline(pid)
+                    built = timeline.build_timeline(pid)
+                    backgrounds = blender.render_model_shots(pid, run, built)
+                    for shot in built["shots"]:
+                        shot.pop("bg", None)
+                        if shot["id"] in backgrounds:
+                            shot["bg"] = backgrounds[shot["id"]]
+                    storage.write_json(pid, "timeline.json", built)
                     compose.render_video(pid, run, base_url=base_url)
                 elif stage == "compose":
                     compose.mux(pid, run)

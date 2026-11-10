@@ -16,7 +16,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import (ANCHOR_NODES, HERO_LENS_MM, HERO_SENSOR_MM, NODES, derive_dimensions, frame_times,
                     display_luminance, enclosing_corners, exposure_curve, interpolate_exposure,
-                    hero_azimuth, hero_camera, hero_fov_y, project_point, read_facts, resolve_path, set_attr, solve_exposure, to_blender)
+                    hero_azimuth, hero_camera, hero_fov_y, title_camera, motion_camera, motion_state, project_point, read_facts, resolve_path, set_attr, solve_exposure, to_blender)
 
 
 def arguments(argv: list[str]) -> argparse.Namespace:
@@ -25,6 +25,8 @@ def arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--shot-json", required=True, help="完整镜头 JSON")
     parser.add_argument("--out", required=True, help="输出目录")
     parser.add_argument("--engine", choices=("eevee","cycles"), default="eevee")
+    parser.add_argument("--frame-format", choices=("jpg", "png"), default="jpg")
+    parser.add_argument("--skip-video", action="store_true", help="仅输出帧序列和锚点")
     parser.add_argument("--samples", type=int, default=64)
     parser.add_argument("--fps", type=int, default=30)
     parser.add_argument("--duration", type=float, default=6)
@@ -60,7 +62,7 @@ def arguments(argv: list[str]) -> argparse.Namespace:
 def frame_filename(args: argparse.Namespace, index: int, time_s: float) -> str:
     if args.stills is not None:
         return f"still_{args.engine}_{str(float(time_s)).removesuffix('.0')}.png"
-    return f"still_{args.engine}.png" if args.still_at is not None else f"frame_{index:05d}.png"
+    return f"still_{args.engine}.png" if args.still_at is not None else f"frame_{index:05d}.{args.frame_format}"
 
 
 def configure_engine(scene: Any, engine: str, samples: int) -> dict[str, Any]:
@@ -140,6 +142,7 @@ def meter_exposure(scene: Any, subjects: list[Any]) -> dict[str, Any]:
         override(scene.render, "resolution_y", 108)
         override(scene.render, "resolution_percentage", 100)
         override(scene.render, "film_transparent", True)
+        override(scene.render.image_settings, "file_format", "PNG")
         override(scene.render.image_settings, "color_mode", "RGBA")
         override(scene.render.image_settings, "color_depth", "16")
         if scene.render.engine == "CYCLES":
@@ -206,7 +209,7 @@ def anchors(scene: Any, parents: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def compose_video(out: Path, fps: int, count: int) -> dict[str, Any]:
+def compose_video(out: Path, fps: int, count: int, frame_format: str = "png") -> dict[str, Any]:
     """仅编码本次帧数，旧目录里多余的帧不会进入成片。"""
     executable = shutil.which(os.environ.get("KEPU_FFMPEG", "ffmpeg"))
     if executable is None:
@@ -215,7 +218,7 @@ def compose_video(out: Path, fps: int, count: int) -> dict[str, Any]:
         return {"status":"skipped", "summary":summary}
     destination = out / "orbit.mp4"
     command = [executable, "-y", "-hide_banner", "-loglevel", "error",
-               "-framerate", str(fps), "-start_number", "1", "-i", str(out/"frame_%05d.png"),
+               "-framerate", str(fps), "-start_number", "1", "-i", str(out/f"frame_%05d.{frame_format}"),
                "-frames:v", str(count), "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p",
                "-crf", "18", "-movflags", "+faststart", str(destination)]
     try:
@@ -233,10 +236,13 @@ def main(argv: list[str]) -> None:
     args = arguments(argv)
     dim = derive_dimensions(read_facts(args.facts))
     shot = json.loads(args.shot_json)
-    if not isinstance(shot,dict) or shot.get("kind","model_orbit") not in ("model_orbit", "title") or not isinstance(shot.get("params",{}),dict):
-        raise ValueError("样片入口只接受 model_orbit 或 title 镜头对象")
+    if not isinstance(shot,dict) or shot.get("kind","model_orbit") not in ("model_orbit", "title", "motion") or not isinstance(shot.get("params",{}),dict):
+        raise ValueError("渲染入口只接受 model_orbit、title 或 motion 镜头对象")
     params = shot.get("params",{})
+    kind = shot.get("kind", "model_orbit")
     hero_azimuth(params,0,args.duration)  # 建模前校验。
+    if kind == "motion":
+        motion_state(dim,params,0,args.duration)
     out = resolve_path(args.out)
     out.mkdir(parents=True,exist_ok=True)
     import bpy
@@ -275,7 +281,12 @@ def main(argv: list[str]) -> None:
                 p = evaluated.matrix_world @ Vector(corner)
                 silhouette.append((p.x,p.z,-p.y))
     silhouette = enclosing_corners(silhouette)
-    environment(dim,mats,hero_azimuth(params,args.duration/2,args.duration))
+    environment(dim,mats,23 if kind == "title" else 24 if kind == "motion" else hero_azimuth(params,args.duration/2,args.duration))
+    # 轨道属于环境，大车移动时保持世界坐标不变。
+    for name in ("rail_left", "rail_right"):
+        matrix = parents[name].matrix_world.copy()
+        parents[name].parent = None
+        parents[name].matrix_world = matrix
     camera_data = bpy.data.cameras.new("camera")
     camera_data.sensor_fit = "AUTO"
     camera_data.sensor_width = HERO_SENSOR_MM
@@ -296,13 +307,29 @@ def main(argv: list[str]) -> None:
                  "summary":"参数化结构示意样片；附属结构与场景不作为设备技术事实",
                  "resolution":[args.width,args.height],"fov_y_deg":hero_fov_y(args.width,args.height),
                  "lens_mm":HERO_LENS_MM,"sensor_width_mm":HERO_SENSOR_MM,
-                 "camera_height_m":8,"max_width_ratio":.82,"max_height_ratio":.78,
-                 "bottom_ratio":.84,"preview":args.preview,"sensor_fit":"AUTO",
+                 "shot_kind":kind,"camera_height_m":8 if kind != "title" else None,
+                 "max_width_ratio":.82 if kind == "model_orbit" else None,
+                 "max_height_ratio":.78 if kind == "model_orbit" else None,
+                 "bottom_ratio":.84 if kind == "model_orbit" else None,"preview":args.preview,"sensor_fit":"AUTO",
                  "min_margin_ratio":.06,"frame_seconds":[],"camera_frames":[],"metering_frames":[]})
     for warning in info["warnings"]:
         print(f"提示：{warning}",flush=True)
     def set_camera(time_s: float) -> tuple[tuple, tuple]:
-        position,target = hero_camera(dim,params,time_s,args.duration,args.width,args.height,silhouette)
+        camera_data.shift_x = camera_data.shift_y = 0
+        if kind == "title":
+            position,target,shift = title_camera(dim,time_s,args.width,args.height,silhouette)
+            camera_data.shift_x = -shift[0]
+            camera_data.shift_y = shift[1]*args.height/max(args.width,args.height)
+        elif kind == "motion":
+            state = motion_state(dim,params,time_s,args.duration)
+            parents["crane"].location = to_blender(state["crane"])
+            parents["trolley"].location = to_blender((state["trolley_x"],dim.girder_top,0))
+            parents["hoist_hook"].location = to_blender((0,state["hook_height"]-dim.girder_top,0))
+            parents["rope"].scale.z = state["rope_scale"]
+            parents["rope"].location.z = state["rope_offset"]
+            position,target = motion_camera(dim,state["crane"],args.width,args.height,silhouette)
+        else:
+            position,target = hero_camera(dim,params,time_s,args.duration,args.width,args.height,silhouette)
         camera.location = to_blender(position)
         camera.rotation_euler = (Vector(to_blender(target))-camera.location).to_track_quat('-Z','Y').to_euler()
         bpy.context.view_layer.update()
@@ -328,17 +355,27 @@ def main(argv: list[str]) -> None:
         scene.render.filepath = str(out/filename)
         frame_anchors = anchors(scene,parents)
         before = time.perf_counter()
+        scene.render.image_settings.file_format = "JPEG" if filename.endswith(".jpg") else "PNG"
+        scene.render.image_settings.quality = 92
         bpy.ops.render.render(write_still=True)
         elapsed = time.perf_counter()-before
         if not (out/filename).is_file():
-            raise RuntimeError("渲染结束但没有生成 PNG")
+            raise RuntimeError("渲染结束但没有生成背景帧")
         info["frame_seconds"].append(elapsed)
         projected = [project_point(p,position,target,args.width,args.height,info["fov_y_deg"]) for p in silhouette]
+        if kind == "title":
+            for point in projected:
+                point["x"] -= camera_data.shift_x*args.width
+                point["y"] += camera_data.shift_y*max(args.width,args.height)
+        elif kind == "motion" and params["axis"] == "gantry":
+            offset = motion_state(dim,params,time_s,args.duration)["crane"]
+            projected = [project_point(tuple(v+d for v,d in zip(p,offset)),position,target,
+                                       args.width,args.height,info["fov_y_deg"]) for p in silhouette]
         edges = {"left":min(p["x"] for p in projected),"right":max(p["x"] for p in projected),
                  "top":min(p["y"] for p in projected),"bottom":max(p["y"] for p in projected)}
         cropped = edges["left"] < 0 or edges["right"] > args.width or edges["top"] < 0 or edges["bottom"] > args.height
         info["camera_frames"].append({"time_s":time_s,"position_m":position,"target_m":target,
-            "exposure":scene.view_settings.exposure,"azimuth_deg":hero_azimuth(params,time_s,args.duration),
+            "exposure":scene.view_settings.exposure,"azimuth_deg":23 if kind == "title" else 24 if kind == "motion" else hero_azimuth(params,time_s,args.duration),
             "projected_width_ratio":(edges["right"]-edges["left"])/args.width,
             "width_below_preferred":(edges["right"]-edges["left"])/args.width < .7,
             "projected_height_ratio":(edges["bottom"]-edges["top"])/args.height,
@@ -351,14 +388,14 @@ def main(argv: list[str]) -> None:
             remaining = sum(info["frame_seconds"])/index*(len(times)-index)
             print(f"已完成第 {index}/{len(times)} 帧，单帧耗时 {elapsed:.2f} 秒，"
                   f"预计剩余 {remaining:.1f} 秒",flush=True)
-    if any(frame["width_below_preferred"] for frame in info["camera_frames"]):
+    if kind == "model_orbit" and any(frame["width_below_preferred"] for frame in info["camera_frames"]):
         warning = "部分时刻画宽低于 70%；固定机位高度、焦距和环绕方位下，优先保证上沿留白及下沿 84%"
         info["warnings"].append(warning)
         print(f"提示：{warning}",flush=True)
     (out/"anchors.json").write_text(json.dumps(payload,ensure_ascii=False,indent=2),encoding="utf-8")
     try:
-        if args.still_at is None and args.stills is None:
-            info["video"] = compose_video(out,args.fps,len(times))
+        if args.still_at is None and args.stills is None and not args.skip_video:
+            info["video"] = compose_video(out,args.fps,len(times),args.frame_format)
     except RuntimeError as exc:
         info["video"] = {"status":"error", "summary":str(exc)}
         raise

@@ -18,7 +18,10 @@ def test_project_api(client):
     project = client.post("/api/projects", json={"name": "项目一", "brief": "说明"}).json()
     pid = project["id"]
     assert client.get("/api/projects").json() == [project]
-    assert client.get(f"/api/projects/{pid}").json() == project
+    detail = client.get(f"/api/projects/{pid}").json()
+    assert {key: detail[key] for key in project} == project
+    assert detail["render_mode"] == "standard"
+    assert isinstance(detail["blender_available"], bool)
     assert client.get(f"/api/projects/{pid}/facts").json() == {"facts": []}
     assert client.get(f"/api/projects/{pid}/assets").json() == {"assets": []}
     assert client.get("/api/projects/invalid").status_code == 404

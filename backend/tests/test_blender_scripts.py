@@ -379,13 +379,23 @@ def test_scene_settings_match_supplied_api(monkeypatch, capsys):
     assert all(call.args[1][1] == 1.2 and call.args[2][1] == .6 for call in supports)
     assert len([call for call in geometry.mesh.call_args_list if call.args[0] == 'hull_bulkheads']) == 3
     water = next(call for call in geometry.box.call_args_list if call.args[0] == 'water')
-    assert water.args[1] == (60,.05,200)
+    assert water.args[1] == (60,.05,120)
     assert water.args[2][2] == 0
     ground = next(call for call in geometry.mesh.call_args_list if call.args[0] == 'ground')
     vertices = ground.args[2]
     assert all(math.hypot(v[0],v[2]) == pytest.approx(8000) for v in vertices[1::2])
-    assert all(abs(v[0]-water.args[2][0]) == pytest.approx(30) or abs(v[2]) == pytest.approx(100)
+    assert all(abs(v[0]-water.args[2][0]) == pytest.approx(30) or abs(v[2]) == pytest.approx(60)
                for v in vertices[::2])
+    bed = next(c for c in geometry.box.call_args_list if c.args[0] == 'transport_flatbed')
+    wheels = [c for c in geometry.cylinder.call_args_list if c.args[0] == 'transport_wheels']
+    assert len(wheels) == 6
+    for wheel in wheels:
+        start,end,radius = wheel.args[1:4]
+        assert start[1]-radius == pytest.approx(0)
+        assert start[1]+radius < bed.args[2][1]-bed.args[1][1]/2
+        assert all(abs(p[2]-bed.args[2][2]) < bed.args[1][2]/2 for p in (start,end))
+    assert any(c.args[0] == 'transport_windscreen' and c.args[3] == 'glass'
+               for c in geometry.box.call_args_list)
     foundations = [c for c in geometry.box.call_args_list if c.args[0] == 'foundation']
     assert len(foundations) == 2 and all(c.args[1][0] == 1.2 for c in foundations)
     assert mats['rail_top'].node_tree.nodes['Principled BSDF'].inputs['Roughness'].default_value == .25
@@ -469,7 +479,7 @@ def test_batch_stills_arguments_and_names(render_module):
     args = render_module.arguments(base+['--engine','cycles','--still-at','3'])
     assert render_module.frame_filename(args,1,3) == 'still_cycles.png'
     args = render_module.arguments(base)
-    assert render_module.frame_filename(args,1,0) == 'frame_00001.png'
+    assert render_module.frame_filename(args,1,0) == 'frame_00001.jpg'
 
 
 @pytest.mark.parametrize('options', [['--stills','nan'],['--stills','7'],['--stills','-1'],
@@ -528,7 +538,7 @@ def test_meter_uses_display_transform_and_restores_scene(render_module, monkeypa
     background = NS(type='MESH', hide_render=False, as_pointer=lambda:2)
     hidden = NS(type='MESH', hide_render=True, as_pointer=lambda:3)
     light = NS(type='LIGHT', hide_render=False)
-    settings = NS(color_mode='RGB', color_depth='8')
+    settings = NS(file_format='JPEG', color_mode='RGB', color_depth='8')
     render = NS(engine=engine, resolution_x=1920, resolution_y=1080, resolution_percentage=100,
                 film_transparent=False, image_settings=settings, filepath='正式帧.png')
     scene = NS(render=render, cycles=NS(samples=64,use_adaptive_sampling=True),
@@ -684,9 +694,12 @@ def test_anchors_use_runtime_projection_and_only_frame_visibility(render_module,
 
 
 @pytest.mark.parametrize('options,count,video', [([],180,True),
-    (['--stills','0.5,3,5.5','--preview'],3,False),(['--still-at','3'],1,False)])
+    (['--stills','0.5,3,5.5','--preview'],3,False),(['--still-at','3'],1,False),
+    (['--duration','1.25','--skip-video'],38,False)])
+@pytest.mark.parametrize('shot', [{'kind':'model_orbit'}, {'kind':'title'},
+    *({'kind':'motion','params':{'axis':axis,'from_m':5,'to_m':20}} for axis in ('trolley','hoist','gantry'))])
 def test_render_orchestration_meters_five_times_and_exports_all_frames(
-        render_module, monkeypatch, tmp_path, capsys, options, count, video):
+        render_module, monkeypatch, tmp_path, capsys, options, count, video, shot):
     from types import SimpleNamespace as NS
     import numpy as np
     class Vector(np.ndarray):
@@ -694,10 +707,12 @@ def test_render_orchestration_meters_five_times_and_exports_all_frames(
             return np.asarray(values,dtype=float).view(cls)
         x = property(lambda self: float(self[0]))
         y = property(lambda self: float(self[1]))
-        z = property(lambda self: float(self[2]))
+        z = property(lambda self: float(self[2]), lambda self, value: self.__setitem__(2, value))
         def to_track_quat(self, *args):
             return NS(to_euler=lambda: tuple(self))
     class Identity:
+        def copy(self):
+            return self
         def __matmul__(self, value):
             return value
     camera = NS()
@@ -706,9 +721,12 @@ def test_render_orchestration_meters_five_times_and_exports_all_frames(
     dim = common.derive_dimensions({})
     obj = NS(matrix_world=Identity(),bound_box=[common.to_blender(p) for p in common.framing_points(dim)])
     obj.evaluated_get = lambda graph: obj
+    parents = {name:NS(matrix_world=Identity(),location=Vector((0,0,0)),scale=NS(z=1)) for name in common.NODES}
     rendered = []
     def render(**kwargs):
         assert kwargs == {'write_still':True}
+        assert settings.quality == 92
+        assert settings.file_format == ('JPEG' if scene.render.filepath.endswith('.jpg') else 'PNG')
         rendered.append(scene.view_settings.exposure)
         from pathlib import Path
         Path(scene.render.filepath).write_bytes(b'frame')
@@ -718,9 +736,9 @@ def test_render_orchestration_meters_five_times_and_exports_all_frames(
               ops=NS(object=NS(select_all=lambda **kw:None,delete=lambda **kw:None),render=NS(render=render)))
     monkeypatch.setitem(sys.modules,'bpy',fake)
     monkeypatch.setitem(sys.modules,'mathutils',NS(Vector=Vector))
-    monkeypatch.setitem(sys.modules,'crane',NS(build_crane=lambda *a:{n:obj for n in common.NODES}))
+    monkeypatch.setitem(sys.modules,'crane',NS(build_crane=lambda *a:parents))
     monkeypatch.setitem(sys.modules,'scene',NS(environment=lambda *a:None,materials=lambda:{}))
-    monkeypatch.setattr(render_module,'part_objects',lambda parent:[parent])
+    monkeypatch.setattr(render_module,'part_objects',lambda parent:[obj])
     monkeypatch.setattr(render_module,'bounds',lambda *a:(Vector((-dim.length/2,-60,0)),Vector((dim.length/2,60,dim.height))))
     monkeypatch.setattr(render_module,'read_facts',lambda _: {})
     monkeypatch.setattr(render_module,'configure_engine',lambda *a:{'warnings':[],'device':'模拟设备'})
@@ -732,25 +750,76 @@ def test_render_orchestration_meters_five_times_and_exports_all_frames(
     monkeypatch.setattr(render_module,'anchors',lambda *a:{n:{'x':1,'y':2,'visible':True} for n in common.ANCHOR_NODES})
     encoded = []
     monkeypatch.setattr(render_module,'compose_video',lambda *a:encoded.append(a) or {'status':'ok'})
-    render_module.main(['--facts','facts.json','--shot-json','{"kind":"model_orbit"}',
+    render_module.main(['--facts','facts.json','--shot-json',json.dumps(shot),
                         '--out',str(tmp_path),*options])
     payload = json.loads((tmp_path/'anchors.json').read_text())
     report = json.loads((tmp_path/'render_eevee.json').read_text())
     assert len(meters) == 5
-    assert [m['time_s'] for m in report['metering_frames']] == [0,1.5,3,4.5,6]
+    duration = 1.25 if '--duration' in options else 6
+    assert [m['time_s'] for m in report['metering_frames']] == [duration*i/4 for i in range(5)]
     assert len(payload['frames']) == len(report['camera_frames']) == len(rendered) == count
     assert all((tmp_path/f['file']).is_file() and len(f['nodes']) == 6 for f in payload['frames'])
     assert [f['exposure'] for f in payload['frames']] == rendered
-    assert all(f['projected_bounds_px']['bottom']/report['resolution'][1] == pytest.approx(.84)
-               for f in report['camera_frames'])
+    if shot['kind'] == 'model_orbit':
+        assert all(f['projected_bounds_px']['bottom']/report['resolution'][1] == pytest.approx(.84)
+                   for f in report['camera_frames'])
+    assert all(not f['cropped'] for f in report['camera_frames'])
     assert bool(encoded) is video
     if video:
-        assert encoded == [(tmp_path,30,180)]
-        assert payload['frames'][0]['file'] == 'frame_00001.png'
-        assert payload['frames'][-1]['file'] == 'frame_00180.png'
+        assert encoded == [(tmp_path,30,180,'jpg')]
+        assert payload['frames'][0]['file'] == 'frame_00001.jpg'
+        assert payload['frames'][-1]['file'] == 'frame_00180.jpg'
         assert payload['frames'][-1]['time_s'] == 179/30
         assert max(abs(b-a) for a,b in zip(rendered,rendered[1:])) <= .02
         progress = [line for line in capsys.readouterr().out.splitlines() if '预计剩余' in line]
         assert len(progress) == 18 and '第 180/180 帧' in progress[-1]
     if '--preview' in options:
         assert (payload['width'],payload['height']) == (960,540)
+
+
+@pytest.mark.parametrize('size', [(1920,1080),(960,540)])
+def test_title_framing_and_six_percent_push(size):
+    dim = common.derive_dimensions({})
+    width,height = size
+    points = common.framing_points(dim)
+    start,target,_ = common.title_camera(dim,0,*size)
+    end,_,_ = common.title_camera(dim,6,*size)
+    assert math.dist(end,target)/math.dist(start,target) == pytest.approx(.94)
+    assert math.degrees(math.atan2(start[0]-target[0],start[2]-target[2])) == pytest.approx(23)
+    for t in (0,1,3,6,10):
+        camera,target,(dx,dy) = common.title_camera(dim,t,*size)
+        pts = [common.project_point(p,camera,target,width,height,common.hero_fov_y(*size)) for p in points]
+        xs,ys = [p['x']/width+dx for p in pts],[p['y']/height+dy for p in pts]
+        assert (max(xs)+min(xs))/2 == pytest.approx(.70)
+        assert (max(ys)+min(ys))/2 == pytest.approx(.56)
+        assert all(0 <= v <= 1 for v in xs+ys)
+        if t == 0:
+            assert max(xs)-min(xs) == pytest.approx(.5)
+
+
+@pytest.mark.parametrize('axis', ['trolley','hoist','gantry'])
+@pytest.mark.parametrize('t,weight', [(0,0),(1,.0625),(2,.5),(3,.9375),(4,1)])
+def test_motion_matches_player_and_rope_endpoints(axis,t,weight):
+    dim = common.derive_dimensions({})
+    params = {'axis':axis,'from_m':5,'to_m':20}
+    state = common.motion_state(dim,params,t,4)
+    value = 5+15*weight
+    assert state['value'] == pytest.approx(value)
+    assert state['trolley_x'] == (value if axis == 'trolley' else 0)
+    assert state['hook_height'] == (value if axis == 'hoist' else dim.hook_height)
+    assert state['crane'] == (0,0,value if axis == 'gantry' else 0)
+    top,old_bottom = dim.girder_top+1,dim.hook_height+3.9
+    transform = lambda y: dim.girder_top+(y-dim.girder_top)*state['rope_scale']+state['rope_offset']
+    assert transform(top) == pytest.approx(top)
+    assert transform(old_bottom) == pytest.approx(state['hook_height']+3.9)
+    camera,target = common.motion_camera(dim,state['crane'])
+    assert camera[1] == 8 and target[0] == 10 and target[1] == dim.height/2
+    base_camera,base_target = common.motion_camera(dim)
+    assert tuple(p-d for p,d in zip(camera,state['crane'])) == pytest.approx(base_camera)
+    assert tuple(p-d for p,d in zip(target,state['crane'])) == pytest.approx(base_target)
+    assert math.degrees(math.atan2(camera[0]-target[0],camera[2]-target[2])) == pytest.approx(24)
+
+
+def test_frame_format_png_is_optional(render_module):
+    args = render_module.arguments(['--facts','f','--shot-json','{}','--out','frames','--frame-format','png'])
+    assert render_module.frame_filename(args,1,0) == 'frame_00001.png'
