@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {box,mesh,esc,source,clamp,frameParallel} from './common.js';
+import {box,mesh,esc,source,clamp,frameParallel,backLabels} from './common.js';
 import {referenceSize} from './analogy.js';
 export function setup(ctx,shot){
  const f=ctx.timeline.facts[shot.params.fact],a=ctx.timeline.analogies?.[shot.params.analogy];
@@ -54,4 +54,5 @@ export function render(ctx,shot,t,dur){
  const high=screen(ctx,weld.localToWorld(new THREE.Vector3(gap/2,thickness/2+width,depth/2)));
  const x=low.x-130;
  ctx.labels.innerHTML=`<g class="weld-step-dimension"><path d="M ${low.x} ${low.y} H ${x-12} M ${high.x} ${high.y} H ${x-12} M ${x} ${low.y} V ${high.y}"/><text x="${x-20}" y="${(low.y+high.y)/2+8}" text-anchor="end">${esc(millimeters)} mm</text><text x="${x}" y="${low.y+45}" text-anchor="middle">错边 · 示意放大</text></g><g opacity="${opacity}"><path class="hair-dimension" d="M ${left.x} ${y-12} v 24 M ${end.x} ${y-12} v 24 M ${left.x} ${y} H ${end.x}"/><text x="${(left.x+end.x)/2}" y="${y+38}" text-anchor="middle">${esc(millimeters)} mm · 等比对照</text><text class="hair-label" x="${left.x}" y="${y+72}">头发丝直径 ${esc(size.size)} ${esc(size.unit)}</text></g>`;
+ backLabels(ctx);
 }

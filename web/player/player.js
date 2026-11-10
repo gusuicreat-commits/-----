@@ -55,8 +55,9 @@ async function drawFrame(t){
  const asset=ctx.timeline.assets?.[shot.params?.asset];const badge=shot.source==='real'?(asset?.provenance==='reference'?'参考实拍 · 非本机':'实拍'):shot.source==='ai'?'AI 创意画面':shot.source==='model'?`三维模型渲染 · ${ctx.timeline.model?.kind==='step'?'依据STEP':'参数化重建'}`:'信息图';
  $('badge').textContent=badge;$('badge').style.setProperty('--badge-color',({model:'#38d1ff',real:'#3ad07a',ai:'#a77bff',graphic:'#8996a4'})[shot.source]);
  $('caption').textContent=(ctx.timeline.captions||[]).filter(c=>t>=c.start&&t<c.end).map(c=>c.text).join('\n');
+ const caption=$('caption');$('credit').style.bottom=`${1080-(caption.textContent?caption.offsetTop:890)+12}px`;
  $('chapter').textContent=`${String(index+1).padStart(2,'0')} / ${String(shots.length).padStart(2,'0')}`;
- $('numbers').innerHTML=(shot.text_overlays||[]).map(o=>{const f=ctx.timeline.facts?.[o.fact];return f?`<div class="number-card"><div class="name">${esc(f.name)}</div><strong>${esc(f.value)}</strong><span class="unit">${esc(f.unit)}</span><div class="source">${source(f)}</div></div>`:`<div class="number-card">${esc(o.text)}</div>`;}).join('');
+ $('numbers').innerHTML=(['data_card','analogy'].includes(shot.kind)?[]:shot.text_overlays||[]).map(o=>{const f=ctx.timeline.facts?.[o.fact];return f?`<div class="number-card"><div class="name">${esc(f.name)}</div><strong>${esc(f.value)}</strong><span class="unit">${esc(f.unit)}</span><div class="source">${source(f)}</div></div>`:`<div class="number-card">${esc(o.text)}</div>`;}).join('');
  const fadeIn=index>0?1-clamp(localT/.175):0,fadeOut=index<shots.length-1?1-clamp((dur-localT)/.175):0;$('fade').style.opacity=Math.max(fadeIn,fadeOut);
  $('scrub').value=t;$('time').textContent=`${t.toFixed(1)} / ${api.duration.toFixed(1)} 秒`;$('shot-info').textContent=`${shot.id} · ${shot.kind}`;
  await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));

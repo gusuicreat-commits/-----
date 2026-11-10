@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import {box,mesh,frameParallel,esc,clamp} from './common.js';
+import {box,mesh,frameParallel,esc,clamp,projectBounds} from './common.js';
+import {placeDimensionLabel} from './layout.js';
 const defaults={football_field:105,building_floor:3,boeing747:64.4,hair:.00007,person:1.75,bus:12};
 export function referenceSize(a){
  const unit=a.ref==='hair'?'mm':'m',size=a.ref==='hair'?.07:defaults[a.ref];
@@ -57,7 +58,7 @@ export function setup(ctx,shot){const a=ctx.timeline.analogies?.[shot.params.ana
  // 参照物从第一帧起就与设备对齐，不用横向滑入破坏真实尺度。
  if(heightAxis){
   const leg=new THREE.Box3().setFromObject(ctx.model.getObjectByName('leg_right')||ctx.model);
-  r.position.set(leg.max.x+6-local.min.x,crane.min.y-local.min.y,leg.getCenter(new THREE.Vector3()).z-local.getCenter(new THREE.Vector3()).z);
+  r.position.set(leg.max.x+6-local.min.x,-local.min.y,leg.getCenter(new THREE.Vector3()).z-local.getCenter(new THREE.Vector3()).z);
  }else{
   // 轨道可能比设备本体更长，统一放在完整轨道占地之外。
   const footprint=crane.clone();
@@ -79,14 +80,14 @@ export function render(ctx,shot,t,dur){
  const crane=new THREE.Box3().setFromObject(ctx.model.getObjectByName('crane')||ctx.model),girder=new THREE.Box3().setFromObject(ctx.model.getObjectByName('girder')||ctx.model),ref=new THREE.Box3().setFromObject(g.userData.ref);
  const heightAxis=a.axis==='height';
  frameParallel(ctx,[crane,ref],heightAxis?{angle:0,elevation:8,height:.62,cy:.47}:{angle:-35,elevation:35,width:.62,cy:.43});
- const f=ctx.timeline.facts[a.fact],ground=crane.min.y;
+ const f=ctx.timeline.facts[a.fact],ground=0,dimensionZ=Math.max(crane.max.z,ref.max.z);
  const size=referenceSize(a);
  const refText=a.ref==='building_floor'?`参照 ${Number(a.ratio.toFixed(2))} 层 × ${size.size} ${size.unit}`:`参照 ${size.size} ${size.unit}`;
  const dimensions=heightAxis?[
-  [new THREE.Vector3(crane.min.x-3,ground,crane.max.z),new THREE.Vector3(crane.min.x-3,crane.max.y,crane.max.z),`${f?.name||'整机高度'} ${f?.value??ctx.size.y} ${f?.unit||'m'}`,'#ff8a1f'],
-  [new THREE.Vector3(ref.max.x+3,ground,ref.max.z),new THREE.Vector3(ref.max.x+3,ref.max.y,ref.max.z),refText,'#38d1ff']
+  [new THREE.Vector3(crane.min.x-3,ground,dimensionZ),new THREE.Vector3(crane.min.x-3,crane.max.y,dimensionZ),`${f?.name||'整机高度'} ${f?.value??ctx.size.y} ${f?.unit||'m'}`,'#ff8a1f'],
+  [new THREE.Vector3(ref.max.x+3,ground,dimensionZ),new THREE.Vector3(ref.max.x+3,ref.max.y,dimensionZ),refText,'#38d1ff']
  ]:[
-  [new THREE.Vector3(girder.min.x,girder.max.y+3,girder.max.z),new THREE.Vector3(girder.max.x,girder.max.y+3,girder.max.z),`主梁 ${f?.value??Number((girder.max.x-girder.min.x).toFixed(2))} ${f?.unit||'m'}`,'#ff8a1f'],
+  [new THREE.Vector3(girder.min.x,crane.max.y+4,girder.max.z),new THREE.Vector3(girder.max.x,crane.max.y+4,girder.max.z),`主梁 ${f?.value??Number((girder.max.x-girder.min.x).toFixed(2))} ${f?.unit||'m'}`,'#ff8a1f'],
   [new THREE.Vector3(ref.min.x,ref.max.y+1,ref.max.z+3),new THREE.Vector3(ref.max.x,ref.max.y+1,ref.max.z+3),refText,'#38d1ff']
  ];
  if(a.ref==='boeing747'){
@@ -94,19 +95,22 @@ export function render(ctx,shot,t,dur){
   dimensions[1][0]=g.userData.ref.localToWorld(new THREE.Vector3(-32.2,7.5,15));
   dimensions[1][1]=g.userData.ref.localToWorld(new THREE.Vector3(32.2,7.5,15));
  }
- const labels=dimensions.map(([start,end,text,color],index)=>{
-  const p=screen(ctx,start.clone().lerp(end,.5));
-  return {x:p.x,y:p.y-(heightAxis?0:28),text,color,side:heightAxis?(index===0?'left':'right'):'center'};
- }).sort((a,b)=>a.y-b.y);
- for(let i=1;i<labels.length;i++)labels[i].y=Math.max(labels[i].y,labels[i-1].y+40);
+ const segments=dimensions.flatMap(([start,end])=>{
+  const a=screen(ctx,start),b=screen(ctx,end),tick=8;
+  return [[a,b],...[a,b].map(p=>heightAxis?[{x:p.x-tick,y:p.y},{x:p.x+tick,y:p.y}]:[{x:p.x,y:p.y-tick},{x:p.x,y:p.y+tick}])];
+ });
+ const labels=dimensions.map(([start,end,text,color],index)=>({
+  a:screen(ctx,start),b:screen(ctx,end),text,color,side:heightAxis?(index===0?'left':'right'):'center',
+ }));
  const opacity=clamp(t/.6);
  ctx.content.innerHTML=`<div class="section-title analogy-title"><small>尺度对照 / 等比例</small>${heightAxis?'把高度放回日常':'把长度放回日常'}</div><div class="analogy-copy" style="opacity:${opacity}">${esc(a.text)}<small>参照尺寸 ${esc(size.size)} ${esc(size.unit)} · 按真实比例呈现</small></div>`+
-  labels.map(p=>`<div class="dimension-label ${p.side}" style="left:${p.x}px;top:${p.y}px;--dimension-color:${p.color};opacity:${opacity}">${esc(p.text)}</div>`).join('');
- // 按真实字体宽度约束边界，长中文标签也不会被画布裁掉。
- for(const node of ctx.content.querySelectorAll?.('.dimension-label')||[]){
-  const width=node.offsetWidth,x=Number.parseFloat(node.style.left);
-  const offset=node.classList.contains('left')?-width-14:node.classList.contains('right')?14:-width/2;
-  node.style.left=`${clamp(x+offset,40,1880-width)-offset}px`;
+  labels.map(p=>`<div class="dimension-label ${p.side}" style="left:0;top:0;--dimension-color:${p.color};opacity:${opacity}">${esc(p.text)}</div>`).join('');
+ // 测量真实字体后避开所有尺寸线、小车与已放置标签。
+ const trolley=ctx.model.getObjectByName('trolley');
+ const obstacles=trolley?[projectBounds(ctx,new THREE.Box3().setFromObject(trolley))]:[];
+ for(const [i,node] of [...(ctx.content.querySelectorAll?.('.dimension-label')||[])].entries()){
+  const p=labels[i],rect=placeDimensionLabel(p.a,p.b,node.offsetWidth,node.offsetHeight,p.side,segments,obstacles);
+  Object.assign(node.style,{left:`${rect.x}px`,top:`${rect.y}px`,transform:'none',marginLeft:'0'});obstacles.push(rect);
  }
  ctx.labels.innerHTML=`<g opacity="${opacity}">${dimensions.map(([start,end,,color])=>dimension(ctx,start,end,color,heightAxis)).join('')}</g>`;
 }

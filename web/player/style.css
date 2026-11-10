@@ -19,10 +19,16 @@
 
 #creative{z-index:0}#content{z-index:1}#labels,#numbers,#credit,#motion-info,#caption,header,footer{z-index:2}
 
-.dimension-label{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;border-radius:8px;background:#111a24e6;color:#fff;font-size:22px;line-height:28px;padding:4px 12px;border-left:4px solid var(--dimension-color)}
+.dimension-label{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;border-radius:8px;background:#111a24;color:#fff;font-size:22px;line-height:28px;padding:4px 12px;border-left:4px solid var(--dimension-color)}
 .dimension-label.left{transform:translate(-100%,-50%);margin-left:-14px}
 .dimension-label.right{transform:translateY(-50%);margin-left:14px}
 .analogy-title{top:124px;font-size:28px}
 .analogy-title small{font-size:16px;margin-bottom:6px}
 .analogy-copy{bottom:160px;font-size:24px;padding:8px 14px}
 .analogy-copy small{font-size:18px;margin-top:4px}
+
+/* 实拍标题与署名分别保留局部遮罩，主体画面不做整体压暗。 */
+.media-copy{width:1720px;max-width:1720px;white-space:nowrap;word-break:keep-all;line-break:strict;line-height:1.2;padding:16px 20px;background:linear-gradient(135deg,rgba(11,17,24,.65),transparent)}
+#media img,#media video{object-position:50% 50%;transform-origin:50% 50%}
+#credit{left:75px;max-width:60%;font-size:14px;line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal;padding:6px 12px;background:linear-gradient(135deg,rgba(11,17,24,.65),transparent);text-shadow:0 1px 3px #000}
+#labels .label-background{fill:#111a24;stroke:none}
