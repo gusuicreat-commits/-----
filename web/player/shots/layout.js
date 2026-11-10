@@ -1,4 +1,39 @@
 // 所有排版几何使用 1920×1080 画布坐标。
+export function hudSafeArea(ctx,shot,t){
+ const doc=ctx.content.ownerDocument,stage=doc?.getElementById('stage');
+ // 镜头先于播放器 HUD 更新；测量当前帧文字，避免乱序 seek 使用上一帧尺寸。
+ if(doc){
+  const badge=doc.getElementById('badge'),caption=doc.getElementById('caption');
+  if(badge)badge.textContent=`三维模型渲染 · ${ctx.timeline.model?.kind==='step'?'依据STEP':'参数化重建'}`;
+  if(caption)caption.textContent=(ctx.timeline.captions||[]).filter(c=>t+(shot.start||0)>=c.start&&t+(shot.start||0)<c.end).map(c=>c.text).join('\n');
+ }
+ const origin=stage?.getBoundingClientRect(),scale=origin?.width/1920;
+ const measure=selector=>{
+  const node=stage?.querySelector(selector),r=node?.getBoundingClientRect();
+  return r?.width&&r.height&&scale?{x:(r.x-origin.x)/scale,y:(r.y-origin.y)/scale,width:r.width/scale,height:r.height/scale}:null;
+ };
+ const top=['#badge','.section-title','#film-title'].map(measure).filter(Boolean);
+ const bottom=['#caption','footer','.analogy-copy'].map(measure).filter(Boolean);
+ const y=Math.max(196,...top.map(r=>r.y+r.height))+16;
+ const end=Math.min(880,...bottom.map(r=>r.y))-16;
+ return {x:40,y,width:1840,height:Math.max(1,end-y),obstacles:[...top,...bottom]};
+}
+// 平行投影同时平移目标点和调整视野，将完整包围矩形放入安全区。
+export function fitProjection(ctx,rect,safe){
+ const factor=Math.min(1,safe.width/rect.width,safe.height/rect.height);
+ const cx=rect.x+rect.width/2,cy=rect.y+rect.height/2;
+ const dx=(cx-960)-(safe.x+safe.width/2-960)/factor;
+ const dy=(cy-540)-(safe.y+safe.height/2-540)/factor;
+ const camera=ctx.camera,e=camera.projectionMatrix.elements;
+ camera.position.add(camera.position.clone().set(1,0,0).applyQuaternion(camera.quaternion).multiplyScalar(dx/(960*e[0])));
+ camera.position.add(camera.position.clone().set(0,1,0).applyQuaternion(camera.quaternion).multiplyScalar(-dy/(540*e[5])));
+ e[0]*=factor;e[5]*=factor;
+ camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();camera.updateMatrixWorld();
+}
+export function enclosingRect(rects){
+ const x=Math.min(...rects.map(r=>r.x)),y=Math.min(...rects.map(r=>r.y));
+ return {x,y,width:Math.max(...rects.map(r=>r.x+r.width))-x,height:Math.max(...rects.map(r=>r.y+r.height))-y};
+}
 export function segmentIntersectsRect(a,b,r){
  let low=0,high=1;
  for(const [origin,delta,min,max] of [[a.x,b.x-a.x,r.x,r.x+r.width],[a.y,b.y-a.y,r.y,r.y+r.height]]){
