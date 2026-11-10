@@ -79,6 +79,19 @@ def get_project(pid: str) -> dict:
     return storage.read_json(pid, "project.json")
 
 
+@app.get("/api/projects/{pid}/llm")
+def get_llm_logs(pid: str) -> dict[str, list[dict[str, object]]]:
+    directory = storage.safe_path(storage.project_dir(pid), "llm")
+    fields = ("task", "backend", "cost_usd", "started_at", "duration_s")
+    calls: list[dict[str, object]] = []
+    with storage.LOCK:
+        for path in sorted(directory.glob("*.json")):
+            if path.is_file():
+                log = storage.read_json(pid, f"llm/{path.name}")
+                calls.append({"file": path.name, **{field: log.get(field) for field in fields}})
+    return {"calls": calls}
+
+
 def next_run(pid: str) -> str:
     with storage.LOCK:
         key = str(storage.project_dir(pid))

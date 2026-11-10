@@ -39,7 +39,7 @@ export function createStudio(ctx) {
       const shot = ctx.state.timeline.shots?.find(s => s.id === id), player = $('#player-frame')?.contentWindow?.__player;
       if (!shot) { toast(`时间线尚未包含镜头 ${id}，请生成或更新预览`); return; }
       if (!player || player !== readyPlayer) { toast('播放器尚未就绪，请等待加载完成后重试'); return; }
-      Promise.resolve().then(() => player.seek(shot.start)).catch(() => toast('播放器跳转失败，请检查时间线'));
+      Promise.resolve().then(() => player.seek(Math.min(shot.start + 0.6, shot.end - 0.05))).catch(() => toast('播放器跳转失败，请检查时间线'));
     }
   }
   function preview() {

@@ -56,7 +56,7 @@ export function createAgent(ctx) {
     const nextCostKey = JSON.stringify([ctx.state.pid, ctx.state.report.generated_at, llm]);
     if (nextCostKey !== costKey) {
       costKey = nextCostKey; callLogs = [];
-      if (llm?.calls) readCallLogs(ctx.state.pid, llm.calls, ctx.state.events).then(logs => {
+      if (llm?.calls) readCallLogs(ctx.state.pid).then(logs => {
         if (costKey !== nextCostKey) return;
         callLogs = logs; render();
       }).catch(() => { /* 原始记录不可读时保留报告中的真实费用汇总。 */ });

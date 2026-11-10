@@ -54,22 +54,10 @@ export function generationProgress(state) {
     summary: current.at(-1)?.summary || '正在准备本次生成任务'};
 }
 
-// 报告负责费用汇总；原始记录仅用于确认回放模式。
-export async function readCallLogs(pid, count, events, read = request) {
-  const tasks = mergeEvents(events).filter(e => e.tool.startsWith('llm.')).map(e => e.tool.split('.').at(-1));
-  const candidates = [...new Set([...tasks, 'extract_facts', 'plan', 'repair', 'revise', 'visual_qa'])];
-  const logs = [];
-  for (let index = 1; index <= count; index++) {
-    let log = null;
-    const ordered = [...new Set([tasks[index - 1], ...candidates].filter(Boolean))];
-    for (const task of ordered) {
-      log = await read(fileURL(pid, `llm/${String(index).padStart(3,'0')}_${task}.json`), {}, true);
-      if (log) break;
-    }
-    if (!log) return [];
-    logs.push(log);
-  }
-  return logs;
+// 报告负责费用汇总；接口返回的完整摘要用于确认回放模式。
+export async function readCallLogs(pid, read = request) {
+  const data = await read(`/api/projects/${encodeURIComponent(pid)}/llm`);
+  return data.calls;
 }
 
 export function costSummary(llm, logs = []) {
@@ -80,7 +68,7 @@ export function costSummary(llm, logs = []) {
 
 export function costDetail(llm, logs = []) {
   if (!llm) return '费用待统计';
-  if (llm.calls > 0 && logs.length === llm.calls && logs.every(log => log.backend === 'replay')) return '回放模式 · 不产生费用';
+  if (logs.length > 0 && logs.every(log => log.backend === 'replay')) return '回放模式 · 不产生费用';
   const cost = Number.isFinite(llm.cost_usd) ? `已知费用 $${llm.cost_usd.toFixed(4)}` : '费用待统计';
   return `${cost}${llm.unknown_cost_calls ? ` · ${llm.unknown_cost_calls} 次费用未知，未计入合计` : ''}`;
 }

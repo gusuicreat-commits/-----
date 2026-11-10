@@ -1,4 +1,4 @@
-import {test,expect,type Page} from '@playwright/test';
+import {test,expect,type Page,type ConsoleMessage,type Response} from '@playwright/test';
 import {mkdir,readFile,rm} from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';
 import path from 'node:path';
@@ -74,6 +74,7 @@ test.describe('真实后端操作流程',()=>{
  test.afterAll(async()=>{await page?.close(); if(pid) await rm(path.join(testRoot,'projects',pid),{recursive:true,force:true});});
  test('载入示例，素材五张、文档一份与空状态',async()=>{
   await page.goto('/');
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href',/^data:image\/svg\+xml,/);
   await expect(page.locator('#open-film')).toBeDisabled();
   await expect(page.getByRole('heading',{name:'让重器的每一处细节，有据可循'})).toBeVisible();
   await noHorizontalOverflow(page);
@@ -162,9 +163,10 @@ test.describe('真实后端操作流程',()=>{
  test('时间轴定位、出处胶囊与播放器同步',async()=>{
   await expect(page.locator('#player-frame')).toHaveAttribute('data-ready','1');
   await expect(page.locator('.shot-card')).toHaveCount(shotlist.shots.length);
-  await page.locator('.shot-card').nth(2).click();
-  await expect(page.locator('#shot-detail')).toContainText(shotlist.shots[2].narration);
-  await expect(page.frameLocator('#player-frame').locator('#shot-info')).toContainText(shotlist.shots[2].id);
+  await page.locator('.shot-card').nth(1).click();
+  await expect(page.locator('#narration-form textarea')).toHaveValue(shotlist.shots[1].narration);
+  await expect(page.frameLocator('#player-frame').locator('#shot-info')).toContainText(shotlist.shots[1].id);
+  await expect.poll(()=>page.frameLocator('#player-frame').locator('#fade').evaluate(el=>Number(getComputedStyle(el).opacity))).toBeLessThan(0.2);
   const withFact=shotlist.shots.findIndex((s:any)=>/\{\{F_/.test(s.narration) && /\{\{A_/.test(s.narration));
   expect(withFact).toBeGreaterThanOrEqual(0);
   await page.locator('.shot-card').nth(withFact).click();
@@ -199,15 +201,38 @@ test.describe('真实后端操作流程',()=>{
   expect(approved.shots[2].review.note).toBe('已核对结构说明与原始资料。');
  });
  test('刷新恢复项目，窄桌面布局与截图',async()=>{
+  const missing:string[]=[], console404:string[]=[], logRequests:string[]=[];
+  const onResponse=(response:Response)=>{
+   if(response.status()===404) missing.push(response.url());
+   if(new URL(response.url()).pathname.includes('/llm')) logRequests.push(response.url());
+  };
+  const onConsole=(message:ConsoleMessage)=>{if(message.type()==='error' && /404/.test(message.text())) console404.push(message.text());};
+  page.on('response',onResponse); page.on('console',onConsole);
+  const summaryResponse=page.waitForResponse(response=>new URL(response.url()).pathname===`/api/projects/${pid}/llm`);
   await page.reload();
+  const summary=await summaryResponse;
+  expect(summary.ok()).toBe(true);
+  const calls=(await summary.json()).calls;
+  expect(calls.length).toBeGreaterThan(0);
+  expect(calls.every((call:any)=>call.backend==='replay')).toBe(true);
+  for(const call of calls) expect(Object.keys(call).sort()).toEqual(['backend','cost_usd','duration_s','file','started_at','task']);
+  await expect(page.locator('#outputs')).toContainText('回放模式 · 不产生费用');
   await expect(page.locator('#project-select')).toHaveValue(pid);
   await expect(page.locator('.shot-card')).toHaveCount(shotlist.shots.length);
   await page.setViewportSize({width:1366,height:768});
   await compactFacts(page);
   await expect(page.locator('#player-frame')).toHaveAttribute('data-ready','1');
   await page.frameLocator('#player-frame').locator('body').evaluate(()=> (window as any).__player.ready);
+  await page.locator('.shot-card').nth(1).click();
+  await expect(page.frameLocator('#player-frame').locator('#shot-info')).toContainText(shotlist.shots[1].id);
+  await expect.poll(()=>page.frameLocator('#player-frame').locator('#fade').evaluate(el=>Number(getComputedStyle(el).opacity))).toBeLessThan(0.2);
   await noHorizontalOverflow(page);
   await page.screenshot({path:'test-results/ui/05-narrow-1366.png'});
+  expect(missing).toEqual([]);
+  expect(console404).toEqual([]);
+  expect(logRequests.length).toBeGreaterThan(0);
+  expect(logRequests.every(url=>new URL(url).pathname===`/api/projects/${pid}/llm`)).toBe(true);
+  page.off('response',onResponse); page.off('console',onConsole);
   expect(errors).toEqual([]);
  });
 });
@@ -252,19 +277,22 @@ test.describe('纯逻辑校验',()=>{
   expect(toolSummary(events.slice(0,1),null,[],Date.parse('2026-01-01T00:00:04Z'))).toContain('总耗时 4.0 秒 · 费用待统计');
   expect(toolSummary([],null)).toContain('大模型 0 次 · 程序工具 0 次 · 总耗时 0.0 秒');
  });
- test('预览等待时间线与播放器就绪，相同画面不因刷新或运行状态重建',async()=>{
+ test('预览就绪后定位避开黑帧，短镜头不越界，反向联动不跳转',async()=>{
   // 最小 DOM 替身：在无浏览器环境验证异步加载及 iframe 身份。
   const previous=Object.getOwnPropertyDescriptor(globalThis,'document');
-  let children:any[]=[], finishReady!:()=>void, unsubscribed=0;
-  const player={ready:new Promise<void>(resolve=>{finishReady=resolve;}),on:()=>()=>{unsubscribed++;}};
+  let children:any[]=[], finishReady!:()=>void, onShot!:(shot:any)=>void, unsubscribed=0;
+  const seeks:number[]=[];
+  const player={ready:new Promise<void>(resolve=>{finishReady=resolve;}),seek:async(time:number)=>{seeks.push(time);},
+   on:(_event:string,callback:(shot:any)=>void)=>{onShot=callback;return ()=>{unsubscribed++;};}};
   const node=()=>({id:'',innerHTML:'',hidden:false,isConnected:false,dataset:{} as any,contentWindow:{__player:player},listeners:{} as any,
-   addEventListener(name:string,fn:any){this.listeners[name]=fn;},
+   addEventListener(name:string,fn:any){this.listeners[name]=fn;},contains:()=>false,
    remove(){children=children.filter(child=>child!==this);this.isConnected=false;}});
   const host={append(child:any){child.isConnected=true;children.push(child);},replaceChildren(...next:any[]){children.forEach(child=>{child.isConnected=false;});children=next;children.forEach(child=>{child.isConnected=true;});}};
-  const targets:any={'#preview':host,'#timeline':node(),'#shot-detail':node()};
-  Object.defineProperty(globalThis,'document',{configurable:true,value:{querySelector:(selector:string)=>targets[selector] || children.find(child=>`#${child.id}`===selector),createElement:node}});
+  const targets:any={'#preview':host,'#timeline':node(),'#shot-detail':node(),'#shot-count':node()};
+  Object.defineProperty(globalThis,'document',{configurable:true,value:{querySelector:(selector:string)=>targets[selector] || children.find(child=>`#${child.id}`===selector),querySelectorAll:()=>[],createElement:node}});
   try {
-   const state:any={pid:'p1',timelineLoaded:false,timeline:{shots:[{id:'S1'}],captions:[],audio:'a.wav'},run:{state:'done'},events:[]};
+   const shots=[{id:'S1',start:0,end:5},{id:'S2',start:5,end:5.3}];
+   const state:any={pid:'p1',timelineLoaded:false,timeline:{shots,captions:[],audio:'a.wav'},shotlist:{shots},facts:[],assets:[],issues:[],run:{state:'done'},events:[]};
    const studio=createStudio({state,isRunning:()=>state.run.state==='running'});
    const frame=()=>children.find(child=>child.id==='player-frame');
    studio.preview(); expect(frame()).toBeUndefined(); expect(children[0].innerHTML).toContain('正在加载时间线');
@@ -274,6 +302,12 @@ test.describe('纯逻辑校验',()=>{
    state.timeline.rendered_duration_s=4; state.report={generated_at:'完成'}; studio.preview();
    expect(frame()).toBe(first);
    finishReady(); await loading; expect(first.dataset.ready).toBe('1');
+   studio.select('S1',true); await Promise.resolve();
+   studio.select('S2',true); await Promise.resolve();
+   expect(seeks).toEqual([0.6,5.25]);
+   onShot(shots[0]); await Promise.resolve();
+   expect(targets['#timeline'].innerHTML).toContain('data-shot="S1" aria-pressed="true"');
+   expect(seeks).toEqual([0.6,5.25]);
    state.run={state:'running',stage:'model'}; studio.preview();
    expect(frame()).toBe(first); expect(first.hidden).toBe(true);
    expect(children.find(child=>child.id==='preview-status').innerHTML).toContain('正在生成：三维模型');
@@ -294,12 +328,18 @@ test.describe('纯逻辑校验',()=>{
   const llm={calls:2,cost_usd:.1234,unknown_cost_calls:0};
   expect(costSummary(llm,[{backend:'cli'},{backend:'cli'}])).toContain('$0.1234');
   expect(costSummary(llm,[{backend:'replay'},{backend:'cli'}])).not.toContain('不产生费用');
-  expect(costSummary(llm,[{backend:'replay'}])).not.toContain('不产生费用');
-  const records:any={'/files/p1/llm/001_extract_facts.json':{backend:'replay'},'/files/p1/llm/002_plan.json':{backend:'replay'}};
-  const logs=await readCallLogs('p1',2,[],async(url:string)=>records[url] || null);
+  expect(costSummary(llm,[])).not.toContain('不产生费用');
+  expect(costSummary(llm,[{backend:'replay'},{backend:null}])).not.toContain('不产生费用');
+  const calls=[{file:'001_extract_facts.json',backend:'replay'},{file:'007_custom_task.json',backend:'replay'}];
+  const requests:string[]=[];
+  const logs=await readCallLogs('p1',async(url:string)=>{requests.push(url);return {calls};});
+  expect(requests).toEqual(['/api/projects/p1/llm']);
+  expect(logs).toEqual(calls);
   expect(costSummary({calls:2,cost_usd:0,unknown_cost_calls:2},logs)).toBe('回放模式 · 不产生费用');
   expect(costSummary({calls:1,cost_usd:0,unknown_cost_calls:1})).toContain('1 次费用未知');
-  expect(await readCallLogs('p1',3,[],async(url:string)=>records[url] || null)).toEqual([]);
+  expect(costSummary({...llm,calls:1},logs)).toBe('回放模式 · 不产生费用');
+  expect(await readCallLogs('p1',async()=>({calls:[]}))).toEqual([]);
+  await expect(readCallLogs('p1',async()=>{throw new Error('读取调用摘要失败');})).rejects.toThrow('读取调用摘要失败');
  });
  test('真实接口提取、确认与离线规划请求一致',async({request})=>{
   const seeded=await request.post('/api/demo/seed');
