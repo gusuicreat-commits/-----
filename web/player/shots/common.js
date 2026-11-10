@@ -10,6 +10,20 @@ export function orbit(ctx,angle=20,elevation=18,distance=1.2,target=ctx.center){
  ctx.camera.position.set(target.x+Math.sin(a)*Math.cos(e)*r,target.y+Math.sin(e)*r,target.z+Math.cos(a)*Math.cos(e)*r);
  ctx.camera.lookAt(target);ctx.camera.updateMatrixWorld();
 }
+// 为背景采样保留两侧各 8% 画宽，沿视线后退而不改变透视方向。
+export function fitBackgroundColumns(ctx){
+ ctx.model.updateWorldMatrix(true,true);ctx.camera.updateMatrixWorld();
+ const camera=ctx.camera,limit=.83/camera.projectionMatrix.elements[0];let retreat=0;
+ ctx.model.traverseVisible(n=>{
+  if(!n.isMesh)return;n.geometry.computeBoundingBox();
+  for(const p of boundsCorners(n.geometry.boundingBox)){
+   p.applyMatrix4(n.matrixWorld).applyMatrix4(camera.matrixWorldInverse);
+   retreat=Math.max(retreat,Math.abs(p.x)/limit+p.z);
+  }
+ });
+ camera.position.addScaledVector(new THREE.Vector3(0,0,1).applyQuaternion(camera.quaternion),retreat);
+ camera.updateMatrixWorld();
+}
 export function mesh(geometry,color,metalness=.35){return new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({color,metalness,roughness:.4}));}
 export function box(group,w,h,d,x,y,z,color){const m=mesh(new THREE.BoxGeometry(w,h,d),color);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;group.add(m);return m;}
 export function partBounds(node){
@@ -29,16 +43,16 @@ export function projectBounds(ctx,bounds){
  const x=Math.min(...points.map(p=>p.x)),y=Math.min(...points.map(p=>p.y));
  return {x,y,width:Math.max(...points.map(p=>p.x))-x,height:Math.max(...points.map(p=>p.y))-y};
 }
-export function labelNodes(ctx,ids,{splitSides=false}={}){
+export function labelNodes(ctx,ids,{splitSides=false,safe}={}){
  ctx.scene.updateMatrixWorld(true);ctx.camera.updateMatrixWorld();
  if(splitSides){
   const center=new THREE.Box3().setFromObject(ctx.model.getObjectByName('crane')||ctx.model).getCenter(new THREE.Vector3());
   const items=[...new Set(ids)].map(id=>{
    const node=ctx.model.getObjectByName(id);if(!node)return null;
-   const anchor=new THREE.Box3().setFromObject(node).getCenter(new THREE.Vector3());
+   const anchor=partBounds(node).getCenter(new THREE.Vector3());
    return {id,left:anchor.x<center.x,...projectPoint(ctx,anchor)};
   }).filter(Boolean);
-  ctx.labels.innerHTML=splitLeaderSlots(items).map(v=>{
+  ctx.labels.innerHTML=splitLeaderSlots(items,safe).map(v=>{
    const {x,y}=v.label;
    return `<g data-part="${esc(v.id)}" data-side="${v.left?'left':'right'}"><path d="${v.points.map((p,j)=>`${j?'L':'M'} ${p.x} ${p.y}`).join(' ')}"/><circle cx="${v.x}" cy="${v.y}" r="5"/><rect x="${x}" y="${y}" width="210" height="50" rx="8"/><text x="${x+20}" y="${y+34}">${names[v.id]||esc(v.id)}</text></g>`;
   }).join('');
@@ -64,6 +78,74 @@ export function backLabels(ctx){
  }
 }
 export const setup = () => {};
+
+export const sceneBackground = '#1d2b3a';
+// 背景和地面共用屏幕空间渐变；颜色在线性空间混合后统一输出。
+const atmosphereShader=`
+uniform vec3 skyColor;
+uniform vec3 groundColor;
+uniform float viewportHeight;
+vec3 atmosphereColor() {
+ float y = 1.0 - gl_FragCoord.y / viewportHeight;
+ return mix(skyColor, groundColor, smoothstep(0.2, 0.85, y));
+}`;
+function atmosphereUniforms(){return {skyColor:{value:new THREE.Color(sceneBackground)},groundColor:{value:new THREE.Color('#8999a6')},viewportHeight:{value:1080}};}
+export function createBackdrop(){
+ const material=new THREE.ShaderMaterial({
+  uniforms:atmosphereUniforms(),depthTest:false,depthWrite:false,
+  vertexShader:'void main(){gl_Position=vec4(position.xy,1.0,1.0);}',
+  fragmentShader:`${atmosphereShader}
+void main(){
+ gl_FragColor=vec4(atmosphereColor(),1.0);
+ #include <tonemapping_fragment>
+ #include <colorspace_fragment>
+}`,
+ });
+ const backdrop=new THREE.Mesh(new THREE.PlaneGeometry(2,2),material);
+ backdrop.frustumCulled=false;backdrop.renderOrder=-1000;return backdrop;
+}
+// 平面覆盖远裁剪范围；近裁剪和远处都渐隐到相同背景。
+export function createGround(camera,texture){
+ const extent=camera.far*4;
+ texture.repeat.set(24*extent/1500,24*extent/1500);
+ const material=new THREE.MeshStandardMaterial({map:texture,roughness:.94,metalness:.08});
+ const uniforms={...atmosphereUniforms(),groundFadeNear:{value:1},groundFadeFar:{value:100}};
+ material.onBeforeCompile=shader=>{
+  Object.assign(shader.uniforms,uniforms);
+  shader.fragmentShader=shader.fragmentShader.replace('#include <common>',`#include <common>
+${atmosphereShader}
+uniform float groundFadeNear;
+uniform float groundFadeFar;`);
+  // 在色调映射之前混合，避免背景与地面经过不同颜色变换形成接缝。
+  shader.fragmentShader=shader.fragmentShader.replace('#include <tonemapping_fragment>',`
+ vec3 haze = atmosphereColor();
+ float screenFade = smoothstep(0.35, 0.75, 1.0-gl_FragCoord.y/viewportHeight);
+ float groundVisibility = screenFade;
+ #ifdef USE_FOG
+  groundVisibility *= smoothstep(groundFadeNear, groundFadeFar, vFogDepth);
+  groundVisibility *= 1.0-smoothstep(fogNear, fogFar, vFogDepth);
+ #endif
+ gl_FragColor.rgb = mix(haze, gl_FragColor.rgb, groundVisibility);
+ #include <tonemapping_fragment>`).replace('#include <fog_fragment>','');
+ };
+ const floor=new THREE.Mesh(new THREE.PlaneGeometry(extent,extent),material);
+ floor.rotation.x=-Math.PI/2;floor.position.y=-.12;floor.receiveShadow=true;
+ floor.userData.fadeUniforms=uniforms;
+ return floor;
+}
+export function updateGround(ctx){
+ const {camera,floor,scene}=ctx;
+ floor.position.x=camera.position.x;floor.position.z=camera.position.z;
+ const map=floor.material.map,extent=floor.geometry.parameters.width;
+ map.offset.x+=floor.position.x/extent*map.repeat.x;
+ map.offset.y-=floor.position.z/extent*map.repeat.y;
+ const fade=floor.userData.fadeUniforms;
+ fade.groundFadeNear.value=camera.near;
+ fade.groundFadeFar.value=camera.near+Math.max(1,ctx.diagonal*.7);
+ fade.skyColor.value.copy(scene.background);
+ ctx.backdrop?.material.uniforms.skyColor.value.copy(scene.background);
+ scene.fog.color.copy(scene.background);
+}
 
 export function boundsCorners(bounds){
  const points=[];

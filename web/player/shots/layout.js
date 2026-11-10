@@ -76,14 +76,16 @@ export function routeLeader(start,end,obstacles){
  return [start,end];
 }
 
-export function splitLeaderSlots(items){
+export function splitLeaderSlots(items,safe={y:250,height:540}){
  return [true,false].flatMap(left=>{
   const side=items.filter(item=>item.left===left).sort((a,b)=>a.y-b.y||a.id.localeCompare(b.id));
   const x=left?95:1590,endX=left?x+210:x;
   // 横线先到同一外侧折点列，再按相同顺序连接标签，避免交叉。
   const elbowX=left?Math.min(380,...side.map(v=>v.x-24)):Math.max(1510,...side.map(v=>v.x+24));
-  const slots=[];let next=795;
+  const slots=[];let next=Math.min(795,safe.y+safe.height);
   for(let i=side.length-1;i>=0;i--){slots[i]=Math.min(side[i].y,next-70);next=slots[i];}
+  let previous=Math.max(250,safe.y)+25-70;
+  for(let i=0;i<slots.length;i++){slots[i]=Math.max(slots[i],previous+70);previous=slots[i];}
   return side.map((v,i)=>({...v,label:{x,y:slots[i]-25},points:[{x:v.x,y:v.y},{x:elbowX,y:v.y},{x:endX,y:slots[i]}]}));
  });
 }

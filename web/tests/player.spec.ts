@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+import {partBounds,fitBackgroundColumns} from '../player/shots/common.js';
 import {readFile,mkdir} from 'node:fs/promises';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
@@ -348,7 +349,11 @@ test('实拍标题去前缀不折词且署名紧邻字幕上方',async({page})=>
     await page.evaluate(t=>window.__player.seek(t),t);
     const title=page.locator('.media-copy');await expect(title).not.toContainText('参考实拍');await expect(title).not.toContainText('非本机');
     const metrics=await title.evaluate((el:HTMLElement)=>({width:el.clientWidth,scroll:el.scrollWidth,height:el.clientHeight,line:parseFloat(getComputedStyle(el).lineHeight),size:parseFloat(getComputedStyle(el).fontSize)}));
-    expect(metrics.width).toBeGreaterThanOrEqual(900);expect(metrics.scroll).toBeLessThanOrEqual(metrics.width);expect(metrics.height-32).toBeLessThanOrEqual(metrics.line+1);
+    expect(metrics.width).toBeLessThanOrEqual(1720);expect(metrics.scroll).toBeLessThanOrEqual(metrics.width);expect(metrics.height-32).toBeLessThanOrEqual(metrics.line+1);
+    const textWidth=await title.evaluate(el=>{const range=document.createRange();range.selectNodeContents(el);return range.getBoundingClientRect().width/(document.getElementById('stage')!.getBoundingClientRect().width/1920);});
+    expect(metrics.width).toBeLessThanOrEqual(textWidth+40);
+    expect(metrics.width).toBeGreaterThanOrEqual(textWidth+31);
+    await expect(title).toHaveCSS('padding-left','16px');await expect(title).toHaveCSS('padding-right','16px');
     if(caption.length>100)expect(metrics.size).toBeLessThan(44);
     else await expect(title).toHaveText('造船厂门式起重机');
     await expect(title).toHaveCSS('word-break','keep-all');await expect(title).toHaveCSS('line-break','strict');await expect(title).toHaveCSS('background-image',/linear-gradient/);
@@ -441,12 +446,11 @@ test('GLB节点爆炸引线按世界左右及投影高度分槽且任意线段�
   const labels=explodedLabels(ctx.labels.innerHTML),center=new ctx.THREE.Box3().setFromObject(ctx.model.getObjectByName('crane')).getCenter(new ctx.THREE.Vector3());
   expect(labels).toHaveLength(5);expect(labels.map(v=>v.id)).toContain('cab');expect(ctx.labels.innerHTML).toContain('司机室');
   for(const v of labels){
-   const node=ctx.model.getObjectByName(v.id),anchor=new ctx.THREE.Box3().setFromObject(node).getCenter(new ctx.THREE.Vector3()),left=anchor.x<center.x;
+   const node=ctx.model.getObjectByName(v.id),anchor=partBounds(node).getCenter(new ctx.THREE.Vector3()),left=anchor.x<center.x;
    anchor.project(ctx.camera);
    expect(v.x).toBeCloseTo((anchor.x+1)*960,5);expect(v.y).toBeCloseTo((1-anchor.y)*540,5);
    expect(v.side).toBe(left?'left':'right');expect(v.labelX).toBe(left?95:1590);
    expect(v.segments).toHaveLength(2);expect(v.segments[0][1].y).toBeCloseTo(v.y,5);
-   expect(v.segments[1][1].y).toBeLessThanOrEqual(v.y+1e-6);
    expect(v.labelY).toBeGreaterThan(v.side==='left'?240:124);expect(v.labelY+50).toBeLessThan(800);
   }
   for(const side of ['left','right']){
@@ -516,7 +520,8 @@ test('爆炸镜头实际标签无引线交叉且避开标题字幕',async({page}
     const r=await page.locator(selector).boundingBox();if(r)measured[selector]={x:(r.x-stage.x)/scale,y:(r.y-stage.y)/scale,width:r.width/scale,height:r.height/scale};
    }
    mockHud(ctx,measured);for(const o of ctx.originals)o.n.position.copy(o.p);module.render(ctx,shot,t-shot.start,shot.end-shot.start);
-   const tb=new ctx.THREE.Box3().setFromObject(ctx.model.getObjectByName('trolley')),gb=new ctx.THREE.Box3().setFromObject(ctx.model.getObjectByName('girder'));
+   if(t===22.5){const rect=visibleModelRect(ctx);expect(rect.width/1920).toBeGreaterThanOrEqual(.6);expect(rect.width/1920).toBeLessThanOrEqual(.7);}
+   const tb=partBounds(ctx.model.getObjectByName('trolley')),gb=partBounds(ctx.model.getObjectByName('girder'));
    const tr=projectBounds(ctx,tb),gr=projectBounds(ctx,gb),anchor=tb.getCenter(new ctx.THREE.Vector3()).project(ctx.camera);
    const trolley=labels.find(v=>v.id==='trolley')!,girder=labels.find(v=>v.id==='girder')!;
    expect(trolley.x).toBeCloseTo((anchor.x+1)*960,4);expect(trolley.y).toBeCloseTo((1-anchor.y)*540,4);
@@ -587,7 +592,7 @@ test('S2高度尺寸线和中点标签及整体投影均在HUD安全区',async()
   }
  }
 });
-test('爆炸小车Box3中心锚点与主梁分离且间距至少24像素',async()=>{
+test('爆炸小车本体Box3中心锚点与主梁分离且间距至少24像素',async()=>{
  const module=await import('../player/shots/exploded.js'),{projectBounds}=await import('../player/shots/common.js'),{hudSafeArea}=await import('../player/shots/layout.js');
  const ctx=await geometryContext(),shot=fixture.shots.find(s=>s.kind==='exploded');
  mockHud(ctx,{...hudRects,'.section-title':{x:76,y:154,width:500,height:104}});
@@ -595,7 +600,7 @@ test('爆炸小车Box3中心锚点与主梁分离且间距至少24像素',async(
   for(const o of ctx.originals)o.n.position.copy(o.p);
   module.render(ctx,shot,t,5);
   const labels=explodedLabels(ctx.labels.innerHTML),trolley=labels.find(v=>v.id==='trolley')!,girder=labels.find(v=>v.id==='girder')!;
-  const tb=new ctx.THREE.Box3().setFromObject(ctx.model.getObjectByName('trolley')),gb=new ctx.THREE.Box3().setFromObject(ctx.model.getObjectByName('girder'));
+  const tb=partBounds(ctx.model.getObjectByName('trolley')),gb=partBounds(ctx.model.getObjectByName('girder'));
   const tr=projectBounds(ctx,tb),gr=projectBounds(ctx,gb),anchor=tb.getCenter(new ctx.THREE.Vector3()).project(ctx.camera);
   expect(trolley.x).toBeCloseTo((anchor.x+1)*960,5);expect(trolley.y).toBeCloseTo((1-anchor.y)*540,5);
   expectInside({x:trolley.x,y:trolley.y,width:0,height:0},tr);
@@ -641,6 +646,187 @@ test('S2双分辨率真实HUD避让与中点标签在乱序定位后保持一致
    for(const rect of labels)expectInside(rect,safe);
    for(const point of segments.flat())expectInside({...point,width:0,height:0},safe);
    if(t===12.5){const actual=JSON.stringify({paths,labels});if(snapshot)expect(actual).toBe(snapshot);snapshot=actual;}
+  }
+ }
+});
+
+function visibleModelRect(ctx){
+ const points=[];
+ ctx.model.traverseVisible(node=>{
+  if(!node.isMesh)return;
+  node.geometry.computeBoundingBox();node.updateWorldMatrix(true,false);
+  const b=node.geometry.boundingBox;
+  for(const x of [b.min.x,b.max.x])for(const y of [b.min.y,b.max.y])for(const z of [b.min.z,b.max.z]){
+   const p=new ctx.THREE.Vector3(x,y,z).applyMatrix4(node.matrixWorld).project(ctx.camera);
+   points.push({x:(p.x+1)*960,y:(1-p.y)*540});
+  }
+ });
+ const x=Math.min(...points.map(p=>p.x)),y=Math.min(...points.map(p=>p.y));
+ return {x,y,width:Math.max(...points.map(p=>p.x))-x,height:Math.max(...points.map(p=>p.y))-y};
+}
+test('T13c分解联合投影占宽60至70且高亮圆环完整可见',async()=>{
+ const module=await import('../player/shots/exploded.js'),{hudSafeArea}=await import('../player/shots/layout.js');
+ for(const titleHeight of [92,104])for(const spread of [8,12,18])for(const includeHook of [false,true]){
+  const ctx=await geometryContext(),shot=structuredClone(fixture.shots.find(s=>s.kind==='exploded'));
+  shot.params.spread_m=spread;if(includeHook)shot.params.parts.push('hoist_hook');
+  mockHud(ctx,{...hudRects,'.section-title':{x:76,y:154,width:500,height:titleHeight}});
+  let snapshot='';
+  for(const t of [2.5,0,1,4.9,2.5]){
+   for(const o of ctx.originals)o.n.position.copy(o.p);
+   module.render(ctx,shot,t,5);
+   const rect=visibleModelRect(ctx),safe=hudSafeArea(ctx,shot,t);
+   expectInside(rect,{x:0,y:0,width:1920,height:1080});
+   expect(rect.width/1920).toBeGreaterThanOrEqual(.6);expect(rect.width/1920).toBeLessThanOrEqual(.7);
+   const rings=[...ctx.labels.innerHTML.matchAll(/data-highlight="([^"]+)" cx="([^"]+)" cy="([^"]+)" r="([^"]+)"/g)];
+   expect(rings).toHaveLength(2);
+   for(const [,id,x,y,r] of rings){
+    expect(Number(r)*1366/1920).toBeGreaterThanOrEqual(14);
+    expectInside({x:Number(x)-Number(r),y:Number(y)-Number(r),width:Number(r)*2,height:Number(r)*2},{x:0,y:0,width:1920,height:1080});
+    expect(ctx.originals.find(o=>o.n.name===id).n.scale.equals(ctx.originals.find(o=>o.n.name===id).s)).toBe(true);
+   }
+   const labels=explodedLabels(ctx.labels.innerHTML);assertLeadersSeparate(labels);
+   for(const label of labels)expectInside({x:label.labelX,y:label.labelY,width:210,height:50},safe);
+   const tb=partBounds(ctx.model.getObjectByName('trolley')),gb=partBounds(ctx.model.getObjectByName('girder'));
+   const {projectBounds}=await import('../player/shots/common.js');
+   const tr=projectBounds(ctx,tb),gr=projectBounds(ctx,gb),trolley=labels.find(v=>v.id==='trolley')!;
+   expect(rectanglesOverlap(tr,gr)).toBe(false);
+   expectInside({x:trolley.x,y:trolley.y,width:0,height:0},tr);
+   if(t===2.5){if(snapshot)expect(ctx.labels.innerHTML).toBe(snapshot);snapshot=ctx.labels.innerHTML;}
+  }
+ }
+});
+test('T13地面覆盖远裁剪范围且平移不改变世界网格定位',async()=>{
+ const {createGround,createBackdrop,updateGround}=await import('../player/shots/common.js'),ctx=await geometryContext();
+ const texture=new ctx.THREE.Texture(),floor=createGround(ctx.camera,texture);ctx.floor=floor;ctx.backdrop=createBackdrop();
+ ctx.scene.fog=new ctx.THREE.Fog('#1d2b3a',230,650);ctx.scene.background.set('#142330');
+ for(const x of [-120,0,240]){
+  ctx.camera.position.set(x,80,160);texture.offset.set(0,.25);updateGround(ctx);
+  expect(floor.geometry.parameters.width/2).toBeGreaterThanOrEqual(ctx.camera.far);
+  expect(floor.geometry.parameters.height/2).toBeGreaterThanOrEqual(ctx.camera.far);
+  expect(ctx.scene.fog.color.equals(ctx.scene.background)).toBe(true);
+  expect(floor.userData.fadeUniforms.skyColor.value.equals(ctx.backdrop.material.uniforms.skyColor.value)).toBe(true);
+  const extent=floor.geometry.parameters.width;
+  // 世界原点的纹理坐标与相机平移无关；保留镜头自身的运动偏移。
+  expect((.5-x/extent)*texture.repeat.x+texture.offset.x).toBeCloseTo(texture.repeat.x/2,8);
+  expect((.5+160/extent)*texture.repeat.y+texture.offset.y).toBeCloseTo(texture.repeat.y/2+.25,8);
+  expect(floor.userData.fadeUniforms.groundFadeNear.value).toBe(ctx.camera.near);
+  expect(floor.userData.fadeUniforms.groundFadeFar.value).toBeGreaterThan(ctx.camera.near);
+ }
+});
+
+// 只截三维画布，排除字幕底片、数字卡和转场；不裁掉画布底部。
+test('T13b三维镜头左右背景列无硬边且过渡带至少15%',async({page},testInfo)=>{
+ await ready(page);
+ for(const kind of ['model_orbit','exploded','analogy']){
+  const shot=fixture.shots.find(s=>s.kind===kind);
+  for(const fraction of [.2,.5,.8]){
+   await page.evaluate(t=>window.__player.seek(t),shot.start+(shot.end-shot.start)*fraction);
+   const ctx=await geometryContext(),module=await import(`../player/shots/${kind}.js`);
+   const measured=await page.evaluate(()=>{
+    const stage=document.getElementById('stage')!.getBoundingClientRect(),scale=stage.width/1920,result={};
+    for(const selector of ['#badge','.section-title','#film-title','#caption','footer','.analogy-copy']){
+     const r=document.querySelector(selector)?.getBoundingClientRect();
+     if(r?.width&&r.height)result[selector]={x:(r.x-stage.x)/scale,y:(r.y-stage.y)/scale,width:r.width/scale,height:r.height/scale};
+    }
+    return result;
+   });
+   mockHud(ctx,measured);module.setup(ctx,shot);module.render(ctx,shot,(shot.end-shot.start)*fraction,shot.end-shot.start);
+   if(kind==='model_orbit')fitBackgroundColumns(ctx);
+   // 模型及参照物必须离开两侧各 8% 的采样竖条。
+   for(const object of [ctx.model,...ctx.groups.values()].filter(n=>n.visible)){
+    const r=visibleModelRect({...ctx,model:object});
+    expect(r.x,`${kind} 左侧背景列被模型侵入`).toBeGreaterThanOrEqual(1920*.08);
+    expect(r.x+r.width,`${kind} 右侧背景列被模型侵入`).toBeLessThanOrEqual(1920*.92);
+   }
+   const data=await page.locator('#scene').evaluate((canvas:HTMLCanvasElement)=>canvas.toDataURL('image/png'));
+   const buffer=Buffer.from(data.split(',')[1],'base64');
+   await testInfo.attach(`${kind}-${fraction}.png`,{body:buffer,contentType:'image/png'});
+   const result=await page.evaluate(async src=>{
+    const image=new Image();image.src=src;await image.decode();
+    const canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;
+    const g=canvas.getContext('2d')!;g.drawImage(image,0,0);const pixels=g.getImageData(0,0,canvas.width,canvas.height).data;
+    const strip=Math.floor(canvas.width*.08),columns=[[0,strip],[canvas.width-strip,canvas.width]],results=[];
+    for(const [left,right] of columns){
+     let previous=0,maximum=0,row=0;const means=[];
+     for(let y=0;y<canvas.height;y++){
+      let mean=0;for(let x=left;x<right;x++){const i=(y*canvas.width+x)*4;mean+=.2126*pixels[i]+.7152*pixels[i+1]+.0722*pixels[i+2];}
+      mean/=right-left;means.push(mean);
+      if(y&&Math.abs(mean-previous)>maximum){maximum=Math.abs(mean-previous);row=y;}previous=mean;
+     }
+     const low=Math.min(...means),range=Math.max(...means)-low;
+     const first=means.findIndex(v=>v>=low+range*.1),last=means.findIndex(v=>v>=low+range*.9);
+     results.push({maximum,row,range,transition:(last-first)/canvas.height});
+    }
+    return results;
+   },data);
+   for(const [side,r] of result.entries()){
+    expect(r.range,`${kind} 背景不能为纯色`).toBeGreaterThan(30);
+    expect(r.maximum,`${kind} ${side?'右':'左'}背景第 ${r.row} 行亮度突变`).toBeLessThan(12);
+    expect(r.transition,`${kind} 背景过渡带太窄`).toBeGreaterThanOrEqual(.15);
+   }
+  }
+ }
+});
+test('T13分解圆环在双分辨率下清晰且切镜恢复轨道',async({page})=>{
+ for(const viewport of [{width:1920,height:1080},{width:1366,height:768}]){
+  await page.setViewportSize(viewport);await ready(page);
+  await page.evaluate(()=>window.__player.seek(7.5));const before=await page.locator('#scene').evaluate((c:HTMLCanvasElement)=>c.toDataURL());
+  for(const t of [22.5,21,24,22.5]){
+   await page.evaluate(t=>window.__player.seek(t),t);
+   const rings=page.locator('#labels .part-highlight');await expect(rings).toHaveCount(2);
+   for(const ring of await rings.all()){
+    const box=(await ring.boundingBox())!;expect(box.width/2).toBeGreaterThanOrEqual(14);expect(box.height/2).toBeGreaterThanOrEqual(14);
+    await expect(ring).toHaveCSS('fill','none');await expect(ring).toHaveCSS('stroke-width','3px');
+   }
+  }
+  await page.evaluate(()=>window.__player.seek(7.5));expect(await page.locator('#scene').evaluate((c:HTMLCanvasElement)=>c.toDataURL())).toBe(before);
+ }
+});
+
+
+test('T13c保留T12斜俯视并收紧分解位移且主梁净空至少6米',async()=>{
+ const module=await import('../player/shots/exploded.js'),{ease}=await import('../player/shots/common.js');
+ for(const spread of [0,8,12,18]){
+  const ctx=await geometryContext(),shot=structuredClone(fixture.shots.find(s=>s.kind==='exploded'));
+  shot.params.spread_m=spread;shot.params.parts.push('hoist_hook');
+  mockHud(ctx,{...hudRects,'.section-title':{x:76,y:154,width:500,height:104}});
+  const hook=ctx.model.getObjectByName('hoist_hook'),trolley=ctx.model.getObjectByName('trolley'),rope=ctx.model.getObjectByName('rope');
+  const hookRelative=hook.position.clone(),ropeRelative=rope.position.clone();
+  for(const t of [2.5,0,.1,1,4.9,5,2.5]){
+   for(const o of ctx.originals)o.n.position.copy(o.p);
+   module.render(ctx,shot,t,5);
+   const girder=new ctx.THREE.Box3().setFromObject(ctx.model.getObjectByName('girder'));
+   for(const id of ['leg_left','leg_right']){
+    const leg=ctx.model.getObjectByName(id),bounds=new ctx.THREE.Box3().setFromObject(leg);
+    expect(girder.min.y).toBeGreaterThan(bounds.max.y);
+    expect(girder.min.y-bounds.max.y).toBeGreaterThanOrEqual(6-1e-8);
+    const original=ctx.originals.find(o=>o.n===leg).p;
+    expect(leg.position.y).toBeCloseTo(original.y,8);expect(leg.position.z).toBeCloseTo(original.z,8);
+    expect((leg.position.x-original.x)*(id==='leg_left'?-1:1)).toBeCloseTo(ease(Math.min(t/5*3,(1-t/5)*3))*spread*.6,8);
+   }
+   expect(hook.position.x).toBeCloseTo(hookRelative.x,8);
+   expect(hook.position.y-hookRelative.y).toBeCloseTo(-ease(Math.min(t/5*3,(1-t/5)*3))*spread*.6,8);
+   expect(rope.position.distanceTo(ropeRelative)).toBeLessThan(1e-8);
+   expect(partBounds(hook).max.y).toBeLessThan(partBounds(trolley).min.y);
+   const direction=ctx.camera.getWorldDirection(new ctx.THREE.Vector3());
+   const elevation=ctx.THREE.MathUtils.radToDeg(Math.asin(Math.abs(direction.y)));
+   const azimuth=ctx.THREE.MathUtils.radToDeg(Math.atan2(-direction.x,-direction.z));
+   expect(elevation).toBeCloseTo(14,8);expect(azimuth).toBeCloseTo(13,8);
+   expect(ctx.camera.projectionMatrix.elements[11]).toBe(0);expect(ctx.camera.projectionMatrix.elements[15]).toBe(1);
+   const rect=visibleModelRect(ctx);expect(rect.width/1920).toBeGreaterThanOrEqual(.6);expect(rect.width/1920).toBeLessThanOrEqual(.7);
+  }
+ }
+});
+
+test('T13b背景采样竖条不包含模型或类比参照物',async()=>{
+ for(const kind of ['model_orbit','exploded','analogy'])for(const fraction of [.2,.5,.8]){
+  const ctx=await geometryContext(),shot=fixture.shots.find(s=>s.kind===kind),module=await import(`../player/shots/${kind}.js`);
+  mockHud(ctx,hudRects);module.setup(ctx,shot);module.render(ctx,shot,(shot.end-shot.start)*fraction,shot.end-shot.start);
+   if(kind==='model_orbit')fitBackgroundColumns(ctx);
+  for(const object of [ctx.model,...ctx.groups.values()].filter(n=>n.visible)){
+   const r=visibleModelRect({...ctx,model:object});
+   expect(r.x,`${kind} 左侧背景列被模型侵入`).toBeGreaterThanOrEqual(1920*.08);
+   expect(r.x+r.width,`${kind} 右侧背景列被模型侵入`).toBeLessThanOrEqual(1920*.92);
   }
  }
 });

@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import {ease,labelNodes,frameParallel,projectBounds,projectPoint} from './common.js';
-import {hudSafeArea,fitProjection} from './layout.js';
+import {ease,labelNodes,frameParallel,partBounds,projectBounds,projectPoint} from './common.js';
+import {hudSafeArea} from './layout.js';
 export {setup} from './common.js';
 export function render(ctx,shot,t,dur){
- const p=shot.params,amount=ease(Math.min(t/dur*3,(1-t/dur)*3))*(p.spread_m??12);
+ const p=shot.params,amount=ease(Math.min(t/dur*3,(1-t/dur)*3))*(p.spread_m??12)*.6;
  const leg=ctx.model.getObjectByName('leg_left'),cab=ctx.model.getObjectByName('cab');
  const legBefore=leg?.getWorldPosition(new THREE.Vector3()),cabBefore=cab?.getWorldPosition(new THREE.Vector3());
  for(const id of new Set(p.parts||[])){
@@ -17,19 +17,33 @@ export function render(ctx,shot,t,dur){
   const target=cabBefore.add(leg.getWorldPosition(new THREE.Vector3()).sub(legBefore));
   cab.position.copy(cab.parent?cab.parent.worldToLocal(target):target);
  }
+ // 收紧分解距离后，仍为主梁与支腿保留至少 6 米净空。
+ const girder=ctx.model.getObjectByName('girder');
+ if(girder&&p.parts?.includes('girder')){
+  const tops=['leg_left','leg_right'].map(id=>ctx.model.getObjectByName(id)).filter(Boolean).map(n=>partBounds(n).max.y);
+  if(tops.length){
+   const lift=Math.max(0,Math.max(...tops)+6-partBounds(girder).min.y);
+   const target=girder.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0,lift,0));
+   girder.position.copy(girder.parent?girder.parent.worldToLocal(target):target);
+  }
+ }
  ctx.content.innerHTML='<div class="section-title"><small>结构分解 / 示意</small>从整体，读懂协同</div>';
  const safe=hudSafeArea(ctx,shot,t);
- const trolley=ctx.model.getObjectByName('trolley'),girder=ctx.model.getObjectByName('girder');
+ const trolley=ctx.model.getObjectByName('trolley');
  const fit=()=>{
-  const bounds=new THREE.Box3().setFromObject(ctx.model.getObjectByName('crane')||ctx.model);
-  frameParallel(ctx,bounds,{angle:13,elevation:14,width:.6,cy:.5});
-  fitProjection(ctx,projectBounds(ctx,bounds),{x:350,y:safe.y+26,width:1220,height:Math.min(770,safe.y+safe.height)-safe.y-52});
+  const parts=[];ctx.model.updateWorldMatrix(true,true);
+  ctx.model.traverseVisible(n=>{
+   if(!n.isMesh)return;n.geometry.computeBoundingBox();
+   parts.push(n.geometry.boundingBox.clone().applyMatrix4(n.matrixWorld));
+  });
+  // 平行投影以视野宽度拉近主体；完整部件留在画布内，标签单独避让 HUD。
+  frameParallel(ctx,parts,{angle:13,elevation:14,width:.65,cy:.5});
  };
- // 小车 Box3 含吊钩、绳索，必须整体抬到主梁投影上方，锚点才落在独立部件内。
+ // 只按小车本体校正净空，避免把下挂吊钩也抬到主梁上方。
  for(let i=0;i<24;i++){
   fit();
   if(!trolley||!girder||!p.parts?.includes('trolley'))break;
-  const tb=new THREE.Box3().setFromObject(trolley),gb=new THREE.Box3().setFromObject(girder);
+  const tb=partBounds(trolley),gb=partBounds(girder);
   const tr=projectBounds(ctx,tb),gr=projectBounds(ctx,gb),gap=gr.y-tr.y-tr.height;
   if(gap>=24)break;
   const center=tb.getCenter(new THREE.Vector3()),a=projectPoint(ctx,center),b=projectPoint(ctx,center.clone().add(new THREE.Vector3(0,1,0)));
@@ -37,5 +51,10 @@ export function render(ctx,shot,t,dur){
   trolley.position.copy(trolley.parent?trolley.parent.worldToLocal(target):target);
  }
  fit();
- labelNodes(ctx,[...new Set([...(p.parts||[]),...(cab?['cab']:[])])],{splitSides:true});
+ labelNodes(ctx,[...new Set([...(p.parts||[]),...(cab?['cab']:[])])],{splitSides:true,safe});
+ for(const id of ['hoist_hook','trolley']){
+  const n=ctx.model.getObjectByName(id);if(!n)continue;
+  const point=projectPoint(ctx,partBounds(n).getCenter(new THREE.Vector3()));
+  ctx.labels.innerHTML+=`<circle class="part-highlight" data-highlight="${id}" cx="${point.x}" cy="${point.y}" r="22"/>`;
+ }
 }
