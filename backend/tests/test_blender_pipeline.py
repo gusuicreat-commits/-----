@@ -228,3 +228,30 @@ def test_safe_rect_and_command(photoreal, processes, kind, overlays, expected):
     assert 'S1' in result
     command = processes[0].args
     assert tuple(map(float,command[command.index('--safe-rect')+1].split(','))) == expected
+
+
+def test_analogy_routing_cache_and_look(photoreal, processes, monkeypatch):
+    monkeypatch.delenv('KEPU_BLENDER_LOOK', raising=False)
+    data = {'fps':30, 'shots':[], 'analogies':{}}
+    for i,ref in enumerate(('building_floor','football_field','bus','person'),1):
+        aid = f'A_{i}'
+        data['analogies'][aid] = {'ref':ref,'ratio':17 if i == 1 else .99,'ref_size_m':3 if i == 1 else 105}
+        data['shots'].append({'id':f'S{i}','kind':'analogy','params':{'analogy':aid},'start':0,'end':1})
+    original = deepcopy(data)
+    result = blender.render_model_shots(photoreal,'r1',data)
+    assert set(result) == {'S1','S2'}
+    assert data == original
+    assert len(processes) == 2
+    import json
+    for process in processes:
+        args = process.args
+        assert args[args.index('--look')+1] == 'afternoon'
+        payload = json.loads(args[args.index('--shot-json')+1])
+        assert payload['analogy_data'] == data['analogies'][payload['params']['analogy']]
+    assert blender.render_model_shots(photoreal,'r2',data) == result
+    monkeypatch.setenv('KEPU_BLENDER_LOOK','dusk')
+    dusk = blender.render_model_shots(photoreal,'r3',data)
+    assert len(processes) == 4 and dusk['S1']['frames'] != result['S1']['frames']
+    data['analogies']['A_1']['ref_size_m'] = 3.2
+    changed = blender.render_model_shots(photoreal,'r4',data)
+    assert len(processes) == 5 and changed['S1']['frames'] != dusk['S1']['frames']

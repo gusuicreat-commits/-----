@@ -41,3 +41,13 @@ export async function showBackground(img,bg,index,resolve,preloaded){
  }
  for(const key of preloaded.keys())if(!upcoming.has(key))preloaded.delete(key);
 }
+
+export function dimensionPoints(payload,index,bg){
+ const dims=payload?.frames?.find(frame=>frame.frame===index)?.dims;
+ if(!dims)throw new Error('写实类比缺少尺寸锚点');
+ const sx=1920/(payload.width||bg.width),sy=1080/(payload.height||bg.height);
+ return Object.fromEntries(Object.entries(dims).map(([key,p])=>{
+  if(!Number.isFinite(p?.x)||!Number.isFinite(p?.y))throw new Error('写实类比尺寸锚点无效');
+  return [key,{x:p.x*sx,y:p.y*sy}];
+ }));
+}

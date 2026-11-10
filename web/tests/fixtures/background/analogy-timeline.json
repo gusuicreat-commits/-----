@@ -1,0 +1,92 @@
+{
+  "fps": 2,
+  "width": 1920,
+  "height": 1080,
+  "duration_s": 3,
+  "model": {
+    "kind": "parametric"
+  },
+  "facts": {
+    "F_overall_height": {
+      "name": "整机高度",
+      "value": 51,
+      "unit": "m"
+    },
+    "F_girder_length": {
+      "name": "主梁长度",
+      "value": 104,
+      "unit": "m"
+    }
+  },
+  "assets": {},
+  "captions": [
+    {
+      "start": 0,
+      "end": 3,
+      "text": "真实比例与尺寸锚点验证"
+    }
+  ],
+  "shots": [
+    {
+      "id": "S1",
+      "kind": "analogy",
+      "source": "model",
+      "params": {
+        "analogy": "A_height"
+      },
+      "start": 0,
+      "end": 1.5,
+      "bg": {
+        "frames": "frame_%05d.jpg",
+        "count": 3,
+        "fps": 2,
+        "anchors": "analogy-height-anchors.json",
+        "engine": "eevee",
+        "width": 960,
+        "height": 540
+      }
+    },
+    {
+      "id": "S2",
+      "kind": "analogy",
+      "source": "model",
+      "params": {
+        "analogy": "A_length"
+      },
+      "start": 1.5,
+      "end": 3,
+      "bg": {
+        "frames": "frame_%05d.jpg",
+        "count": 3,
+        "fps": 2,
+        "anchors": "analogy-length-anchors.json",
+        "engine": "eevee",
+        "width": 960,
+        "height": 540
+      }
+    }
+  ],
+  "render_mode": "photoreal",
+  "analogies": {
+    "A_height": {
+      "ref": "building_floor",
+      "fact": "F_overall_height",
+      "ratio": 17,
+      "axis": "height",
+      "ref_size_m": 3,
+      "ref_size": 3,
+      "ref_unit": "m",
+      "text": "相当于17层楼那么高"
+    },
+    "A_length": {
+      "ref": "football_field",
+      "fact": "F_girder_length",
+      "ratio": 0.99,
+      "axis": "length",
+      "ref_size_m": 105,
+      "ref_size": 105,
+      "ref_unit": "m",
+      "text": "差不多就是一个标准足球场那么长"
+    }
+  }
+}

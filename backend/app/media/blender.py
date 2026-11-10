@@ -16,7 +16,8 @@ from typing import Callable
 
 from app import config, events, storage
 
-MODEL_KINDS = {"title", "model_orbit", "motion", "exploded", "data_card", "outro"}
+MODEL_KINDS = {"title", "model_orbit", "motion", "exploded", "data_card", "outro", "analogy"}
+ANALOGY_REFS = {"building_floor", "football_field"}
 FACT_IDS = {"F_girder_length", "F_overall_height", "F_span", "F_lift_height",
             "F_girder_height", "F_wheel_count"}
 
@@ -36,6 +37,8 @@ HUD_OUTRO_TOP = .30
 
 def shot_safe_rect(shot: dict) -> tuple[float, float, float, float]:
     kind = shot["kind"]
+    if kind == "analogy":
+        return (.08,.23,.92,.80)
     if kind in {"data_card", "outro"}:
         return (HUD_DATA_LEFT if kind == "data_card" else HUD_OUTRO_LEFT,
                 HUD_SIDE_MARGIN if kind == "data_card" else HUD_OUTRO_TOP,
@@ -59,7 +62,7 @@ def blender_executable() -> str | None:
     return shutil.which("blender")
 
 
-def cache_key(shot: dict, facts: dict, engine: str, width: int, height: int, fps: int) -> str:
+def cache_key(shot: dict, facts: dict, engine: str, width: int, height: int, fps: int, look: str = "afternoon") -> str:
     digest = hashlib.sha256()
     for path in sorted((config.ROOT / "blender").glob("*.py")):
         digest.update(path.name.encode())
@@ -71,7 +74,8 @@ def cache_key(shot: dict, facts: dict, engine: str, width: int, height: int, fps
     payload = {"kind": shot["kind"], "params": shot.get("params", {}),
                "duration": shot["end"] - shot["start"], "facts": accepted,
                "engine": engine, "width": width, "height": height, "fps": fps,
-               "safe_rect": shot_safe_rect(shot)}
+               "safe_rect": shot_safe_rect(shot), "look": look,
+               "analogy_data": shot.get("analogy_data")}
     digest.update(json.dumps(payload, sort_keys=True, ensure_ascii=False, allow_nan=False).encode())
     return digest.hexdigest()[:12]
 
@@ -139,13 +143,22 @@ def render_model_shots(pid: str, run: str, timeline: dict) -> dict[str, dict]:
     preview = os.environ.get("KEPU_BLENDER_PREVIEW") == "1"
     width, height = (960, 540) if preview else (1920, 1080)
     fps = int(timeline.get("fps", 30))
-    for shot in timeline["shots"]:
+    look = os.environ.get("KEPU_BLENDER_LOOK", "afternoon")
+    for original in timeline["shots"]:
+        shot = dict(original)
+        if shot["kind"] == "analogy":
+            analogy = timeline.get("analogies", {}).get(shot.get("params", {}).get("analogy"), {})
+            if analogy.get("ref") not in ANALOGY_REFS:
+                continue
+            shot["analogy_data"] = dict(analogy)
         if shot["kind"] not in MODEL_KINDS:
             continue
         sid = shot["id"]
         events.emit(pid, run=run, stage="render", tool="render.blender", status="start",
                     summary=f"正在写实渲染镜头 {sid}", detail={"shot": sid})
         try:
+            if look not in {"afternoon", "dusk"}:
+                raise ValueError("写实画面风格无效")
             if engine not in {"eevee", "cycles"}:
                 raise ValueError("写实渲染引擎无效")
             timeout = float(os.environ.get("KEPU_BLENDER_TIMEOUT_S", "1800"))
@@ -155,7 +168,7 @@ def render_model_shots(pid: str, run: str, timeline: dict) -> dict[str, dict]:
             count = math.ceil(duration * fps)
             if count <= 0 or fps <= 0:
                 raise ValueError("镜头时长和帧率必须大于零")
-            name = f"{sid}-{cache_key(shot, facts, engine, width, height, fps)}"
+            name = f"{sid}-{cache_key(shot, facts, engine, width, height, fps, look)}"
             out = storage.safe_path(directory / "renders/blender", name)
             out.mkdir(parents=True, exist_ok=True)
             done = out / "done.json"
@@ -177,7 +190,7 @@ def render_model_shots(pid: str, run: str, timeline: dict) -> dict[str, dict]:
                 args = [executable, "--background", "--factory-startup", "--python-exit-code", "1", "--python",
                         str(config.ROOT / "blender/render_shot.py"), "--",
                         "--facts", str(directory / "facts.json"), "--shot-json", json.dumps(shot, ensure_ascii=False),
-                        "--out", str(out), "--engine", engine, "--fps", str(fps),
+                        "--out", str(out), "--engine", engine, "--look", look, "--fps", str(fps),
                         "--duration", str(duration), "--frame-format", "jpg", "--skip-video",
                         "--safe-rect", ",".join(str(v) for v in shot_safe_rect(shot))]
                 if preview:
@@ -187,11 +200,11 @@ def render_model_shots(pid: str, run: str, timeline: dict) -> dict[str, dict]:
                         not (out / f"frame_{i:05d}.jpg").is_file() for i in range(1, count + 1)):
                     raise RuntimeError("写实渲染未生成完整帧和锚点")
                 storage.atomic_json(done, {"count": count, "fps": fps, "engine": engine,
-                                           "seconds": round(time.monotonic() - started, 3)})
+                                           "look": look, "seconds": round(time.monotonic() - started, 3)})
             base = f"/files/{pid}/renders/blender/{name}"
             result[sid] = {"frames": base + "/frame_%05d.jpg", "count": count, "fps": fps,
                            "anchors": base + "/anchors.json", "engine": engine,
-                           "width": width, "height": height}
+                           "width": width, "height": height, "look": look}
         except Exception as exc:
             events.emit(pid, run=run, stage="render", tool="render.blender", status="warn",
                         summary=f"镜头 {sid} 写实渲染失败，已回退网页三维",

@@ -203,15 +203,15 @@ def test_engine_configuration_and_device_fallback(render_module, monkeypatch, ca
     devices = [NS(type='CPU', use=True)] + ([NS(type='METAL', use=False)] if metal else [])
     prefs = NS(compute_device_type='NONE', refresh_devices=lambda: None, devices=devices)
     monkeypatch.setitem(sys.modules, 'bpy', NS(context=NS(preferences=NS(addons={'cycles': NS(preferences=prefs)}))))
-    scene = NS(render=NS(engine='', film_transparent=True, use_persistent_data=False),
-               eevee=NS(taa_render_samples=1, use_raytracing=False),
+    scene = NS(render=NS(engine='', film_transparent=True, use_persistent_data=False,use_motion_blur=True),
+               eevee=NS(taa_render_samples=1, use_raytracing=True,use_fast_gi=False,fast_gi_quality=1,fast_gi_ray_count=8,fast_gi_step_count=16),
                cycles=NS(samples=1, use_denoising=False, use_adaptive_sampling=False,
                          max_bounces=1, transparent_max_bounces=1, device='CPU'))
     # 故意缺少 denoiser；应警告并继续，不影响引擎和设备配置。
     result = render_module.configure_engine(scene, engine, 64)
     if engine == 'eevee':
         assert scene.render.engine == 'BLENDER_EEVEE'
-        assert scene.eevee.taa_render_samples == 64 and scene.eevee.use_raytracing
+        assert scene.eevee.taa_render_samples == 24 and not scene.eevee.use_raytracing
         assert not scene.render.film_transparent
         assert capsys.readouterr().out == ''
     else:
@@ -245,8 +245,13 @@ def test_scene_settings_match_supplied_api(monkeypatch, capsys):
 
     # 插槽名取自验收方清单；清单未覆盖的基础节点也显式列出，禁止自动补槽。
     inputs = {
-        'ShaderNodeBsdfPrincipled': 'Base Color,Metallic,Roughness,Transmission Weight,IOR,Normal',
-        'ShaderNodeTexNoise': 'Vector,Scale,Detail',
+        'ShaderNodeBsdfPrincipled': 'Base Color,Metallic,Roughness,Transmission Weight,IOR,Normal,Coat Weight,Coat Roughness',
+        'ShaderNodeTexNoise': 'Vector,Scale,Detail,Roughness',
+        'ShaderNodeAmbientOcclusion': 'Color,Distance,Normal',
+        'ShaderNodeMath': 'Value,Value,Value',
+        'ShaderNodeMixRGB': 'Fac,Color1,Color2',
+        'ShaderNodeTexVoronoi': 'Vector,Scale',
+        'ShaderNodeBsdfTransparent': 'Color',
         'ShaderNodeTexWave': 'Vector,Scale',
         'ShaderNodeTexSky': 'Vector',
         'ShaderNodeVolumePrincipled': 'Density,Color',
@@ -256,7 +261,8 @@ def test_scene_settings_match_supplied_api(monkeypatch, capsys):
         'ShaderNodeHueSaturation': 'Color,Saturation,Value',
         'ShaderNodeCameraData': '',
         'ShaderNodeNewGeometry': '',
-        'ShaderNodeVectorMath': 'Vector,Vector,Vector',
+        'ShaderNodeVectorMath': 'Vector,Vector,Vector,Scale',
+        'ShaderNodeSeparateXYZ': 'Vector','ShaderNodeVectorTransform': 'Vector','ShaderNodeLightPath': '',
         'ShaderNodeEmission': 'Color,Strength',
         'ShaderNodeMixShader': 'Fac,Shader,Shader',
         'ShaderNodeBump': 'Strength,Distance,Height',
@@ -264,21 +270,25 @@ def test_scene_settings_match_supplied_api(monkeypatch, capsys):
         'ShaderNodeOutputMaterial': 'Surface,Volume',
     }
     outputs = {
+        'ShaderNodeAmbientOcclusion': 'Color,AO', 'ShaderNodeMath': 'Value',
+        'ShaderNodeMixRGB': 'Color', 'ShaderNodeTexVoronoi': 'Distance,Color,Position',
+        'ShaderNodeBsdfTransparent': 'BSDF',
         'ShaderNodeBsdfPrincipled': 'BSDF', 'ShaderNodeTexNoise': 'Fac,Color',
         'ShaderNodeTexWave': 'Fac,Color', 'ShaderNodeTexSky': 'Color',
-        'ShaderNodeVolumePrincipled': 'Volume', 'ShaderNodeTexCoord': 'Object',
+        'ShaderNodeVolumePrincipled': 'Volume', 'ShaderNodeTexCoord': 'Object,Generated',
         'ShaderNodeValToRGB': 'Color', 'ShaderNodeMapRange': 'Result',
         'ShaderNodeBump': 'Normal', 'ShaderNodeBackground': 'Background',
         'ShaderNodeOutputMaterial': '',
         'ShaderNodeHueSaturation': 'Color', 'ShaderNodeCameraData': 'View Distance',
         'ShaderNodeNewGeometry': 'Incoming', 'ShaderNodeVectorMath': 'Vector',
         'ShaderNodeEmission': 'Emission', 'ShaderNodeMixShader': 'Shader',
+        'ShaderNodeSeparateXYZ': 'X,Y,Z','ShaderNodeVectorTransform': 'Vector','ShaderNodeLightPath': 'Is Camera Ray',
     }
     created = []
 
     class Sockets(dict):
         def __init__(self, names):
-            self.ordered = [NS(default_value=None) for name in names if name]
+            self.ordered = [NS(default_value=None,links=[],driver_add=lambda _:NS(driver=NS(variables=NS(new=lambda:NS(targets=[NS()]))))) for name in names if name]
             super().__init__(zip(names,self.ordered))
 
         def __getitem__(self, key):
@@ -287,7 +297,7 @@ def test_scene_settings_match_supplied_api(monkeypatch, capsys):
     class Nodes(dict):
         def new(self, kind):
             node = NS(inputs=Sockets(inputs[kind].split(',')),
-                      outputs={name: object() for name in outputs[kind].split(',') if name})
+                      outputs=Sockets(outputs[kind].split(',')))
             if kind == 'ShaderNodeTexSky':
                 node.sky_type = 'SINGLE_SCATTERING'
                 for name in ('sun_elevation', 'sun_rotation', 'sun_disc', 'sun_intensity', 'sun_size',
@@ -298,7 +308,12 @@ def test_scene_settings_match_supplied_api(monkeypatch, capsys):
             elif kind == 'ShaderNodeTexWave':
                 node.wave_type, node.bands_direction = 'BANDS', 'X'
             elif kind == 'ShaderNodeValToRGB':
-                node.color_ramp = NS(interpolation='LINEAR', elements=[NS(color=None, position=0), NS(color=None, position=1)])
+                class Elements(list):
+                    def new(self,position):
+                        element = NS(color=None,position=position)
+                        self.append(element)
+                        return element
+                node.color_ramp = NS(interpolation='LINEAR', elements=Elements([NS(color=None, position=0), NS(color=None, position=1)]))
             self[kind] = node
             created.append((kind, node))
             return node
@@ -308,16 +323,17 @@ def test_scene_settings_match_supplied_api(monkeypatch, capsys):
         nodes['Principled BSDF'] = nodes.new('ShaderNodeBsdfPrincipled')
         nodes['Background'] = nodes.new('ShaderNodeBackground')
         nodes['Material Output'] = nodes.new('ShaderNodeOutputMaterial')
-        return NS(use_nodes=False, node_tree=NS(nodes=nodes, links=NS(new=lambda a, b: None)))
+        return NS(use_nodes=False, surface_render_method="DITHERED", sun_threshold=0, use_sun_shadow=True,
+                  node_tree=NS(nodes=nodes, links=NS(new=lambda a,b:b.links.append(NS(from_socket=a)))))
 
     lights = []
     def new_light(name, kind):
         assert kind == 'SUN'
-        light = NS(energy=0, angle=0, color=None, use_shadow=False)
+        light = NS(energy=0, angle=0, color=None, use_shadow=False, use_shadow_jitter=False)
         lights.append(light)
         return light
 
-    scene = NS(view_settings=NS(view_transform='NONE', look='NONE', exposure=0))
+    scene = NS(view_settings=NS(view_transform='NONE', look='NONE', exposure=0),eevee=NS(use_shadows=False))
     fake_bpy = NS(context=NS(scene=scene, collection=NS(objects=NS(link=lambda obj: None)),
                              object=NS(data=NS(materials=[]))),
                   data=NS(materials=NS(new=new_material), worlds=NS(new=new_material),
@@ -335,28 +351,45 @@ def test_scene_settings_match_supplied_api(monkeypatch, capsys):
     sky = next(node for kind, node in created if kind == 'ShaderNodeTexSky')
     assert sky.sky_type == 'MULTIPLE_SCATTERING'
     # 保留 API 兼容检查，验证新版天空与远景渐隐。
-    assert sky.aerosol_density == 2.0 and sky.ozone_density == 1.0 and sky.sun_disc
-    assert sky.sun_intensity == 1 and sky.sun_elevation == pytest.approx(math.radians(13))
-    assert sky.sun_rotation == pytest.approx(math.radians(35-65-90))
+    assert sky.aerosol_density == 1.2 and sky.ozone_density == 1.0 and not sky.sun_disc
+    assert sky.sun_intensity == 1 and sky.sun_elevation == pytest.approx(math.radians(24))
+    assert sky.sun_rotation == pytest.approx(math.radians(35-110-90))
     assert sky.sun_size == pytest.approx(math.radians(.6))
-    assert lights[0].energy == 1.6 and lights[0].use_shadow
-    assert lights[0].angle == pytest.approx(math.radians(.6))
-    assert scene.world.node_tree.nodes['Background'].inputs['Strength'].default_value == .7
+    assert lights[0].energy == 5.5 and lights[0].use_shadow
+    assert lights[0].angle == pytest.approx(math.radians(.8))
+    assert lights[0].use_shadow_jitter
+    assert scene.eevee.use_shadows
+    assert scene.world.sun_threshold == 1e10 and not scene.world.use_sun_shadow
+    assert mats['paint'].node_tree.nodes['Principled BSDF'].inputs['Base Color'].default_value == (
+        *module.linear_hex('#D9461C'), 1)
+    assert scene.world.node_tree.nodes['Background'].inputs['Strength'].default_value == .55
     assert not any(kind == 'ShaderNodeVolumePrincipled' for kind, _ in created)
     assert mats['glass'].node_tree.nodes['Principled BSDF'].inputs['Transmission Weight'].default_value == .92
     assert scene.view_settings.view_transform == 'AgX'
-    assert scene.view_settings.look == 'AgX - Medium High Contrast'
+    assert scene.view_settings.look == 'AgX - Punchy'
     assert scene.view_settings.exposure == 0
     for name in ('concrete','seam'):
-        fade = mats[name].node_tree.nodes['ShaderNodeMapRange']
-        assert fade.inputs['From Min'].default_value == 500
-        assert fade.inputs['From Max'].default_value == 3000
-        assert fade.clamp
+        assert 'ShaderNodeEmission' not in mats[name].node_tree.nodes
+    assert mats['concrete'].node_tree.nodes['Principled BSDF'].inputs['Base Color'].default_value == (
+        *module.linear_hex('#9C968C'),1)
     assert 'ShaderNodeEmission' not in mats['hull'].node_tree.nodes
     assert mats['hull'].node_tree.nodes['Principled BSDF'].inputs['Base Color'].default_value == (
         *module.linear_hex('#7A3B2A'),1)
     assert mats['warehouse'].node_tree.nodes['Principled BSDF'].inputs['Base Color'].default_value == (
-        *module.linear_hex('#4F5965'),1)
+        *module.linear_hex('#E5E7E7'),1)
+    for key in ('paint','red'):
+        shader = mats[key].node_tree.nodes['Principled BSDF']
+        assert shader.inputs['Base Color'].default_value == (*module.linear_hex('#D9461C'),1)
+        assert shader.inputs['Coat Weight'].default_value == .25
+        assert shader.inputs['Roughness'].default_value == .32
+    assert mats['window'].node_tree.nodes['Principled BSDF'].inputs['Roughness'].default_value == .05
+    module.Geometry.reset_mock()
+    module.environment(common.derive_dimensions({}),mats,35,'dusk')
+    dusk = scene.world.node_tree.nodes['ShaderNodeTexSky']
+    assert dusk.sun_elevation == pytest.approx(math.radians(13))
+    assert dusk.aerosol_density == 2.0
+    assert scene.world.node_tree.nodes['Background'].inputs['Strength'].default_value == .7
+    assert scene.view_settings.look == 'AgX - Medium High Contrast'
     assert capsys.readouterr().out == ''
 
     # 船段有平底、半径 4 m 舭部与垂直舷侧；几何尺寸独立于门机参数。
@@ -403,9 +436,9 @@ def test_scene_settings_match_supplied_api(monkeypatch, capsys):
     plates = [c for c in geometry.box.call_args_list if c.args[0] == 'steel_plates']
     assert len(plates) == 18
     assert all(c.args[1][0] == 12 and c.args[1][2] == 3 for c in plates)
-    factories = [c for c in geometry.box.call_args_list if c.args[3].startswith('warehouse_')]
-    assert len(factories) == 14
-    assert all(12 <= c.args[1][1]+3 <= 28 for c in factories)
+    factories = [c for c in geometry.box.call_args_list if c.args[0].startswith('decor_factory_') and c.args[3] == 'warehouse']
+    assert len(factories) == 3
+    assert all(30 <= c.args[1][1] <= 40 and 120 <= c.args[1][0] <= 180 for c in factories)
     assert all(250 <= math.hypot(c.args[2][0],c.args[2][2]) <= 600 for c in factories)
 
 
@@ -589,7 +622,7 @@ def test_meter_uses_display_transform_and_restores_scene(render_module, monkeypa
         assert scene.view_settings.exposure == 0
     else:
         report = render_module.meter_exposure(scene,[subject])
-        assert report['median'] == pytest.approx(.42,abs=.001)
+        assert report['median'] == pytest.approx(.44,abs=.001)
         assert scene.view_settings.exposure == report['exposure']
     assert len(rendered) == 1
     assert loaded == removed
@@ -627,7 +660,7 @@ def test_animation_exposure_has_no_overshoot_or_frame_jumps(values):
         assert curve == samples
 
 
-@pytest.mark.parametrize('engine,samples', [('eevee',32),('cycles',64)])
+@pytest.mark.parametrize('engine,samples', [('eevee',12),('cycles',64)])
 def test_preview_halves_resolution_and_only_realtime_samples(render_module, engine, samples):
     args = render_module.arguments(['--facts','f.json','--shot-json','{}','--out','frames',
                                     '--preview','--engine',engine])
@@ -700,10 +733,12 @@ def test_anchors_use_runtime_projection_and_only_frame_visibility(render_module,
 
 
 @pytest.mark.parametrize('options,count,video', [([],180,True),
-    (['--stills','0.5,3,5.5','--preview'],3,False),(['--still-at','3'],1,False),
+    (['--stills','0.5,3,5.5','--preview'],3,False),(['--still-at','3','--look','dusk'],1,False),
     (['--duration','1.25','--skip-video'],38,False)])
 @pytest.mark.parametrize('shot', [{'kind':'model_orbit'}, {'kind':'title'},
     {'kind':'data_card'}, {'kind':'outro'},
+    {'kind':'analogy','analogy_data':{'ref':'building_floor','fact':'F_overall_height','ratio':17,'ref_size_m':3}},
+    {'kind':'analogy','analogy_data':{'ref':'football_field','fact':'F_girder_length','ratio':.99,'ref_size_m':105}},
     {'kind':'exploded','params':{'parts':['girder','leg_left','leg_right','trolley','hoist_hook']}},
     *({'kind':'motion','params':{'axis':axis,'from_m':5,'to_m':20}} for axis in ('trolley','hoist','gantry'))])
 def test_render_orchestration_meters_five_times_and_exports_all_frames(
@@ -744,17 +779,26 @@ def test_render_orchestration_meters_five_times_and_exports_all_frames(
               ops=NS(object=NS(select_all=lambda **kw:None,delete=lambda **kw:None),render=NS(render=render)))
     monkeypatch.setitem(sys.modules,'bpy',fake)
     monkeypatch.setitem(sys.modules,'mathutils',NS(Vector=Vector))
-    monkeypatch.setitem(sys.modules,'crane',NS(build_crane=lambda *a:parents))
-    monkeypatch.setitem(sys.modules,'scene',NS(environment=lambda *a:None,materials=lambda:{}))
+    from unittest.mock import MagicMock
+    monkeypatch.setitem(sys.modules,'crane',NS(build_crane=lambda *a:parents,Geometry=MagicMock()))
+    monkeypatch.setitem(sys.modules,'scene',NS(environment=lambda *a:[],materials=lambda:{},analogy_reference=lambda *a:None))
+    monkeypatch.setitem(sys.modules,'bpy_extras.object_utils',NS(world_to_camera_view=lambda scene,camera,point:NS(x=.3+point[0]/1000,y=.2+point[2]/1000,z=100)))
     monkeypatch.setattr(render_module,'part_objects',lambda parent:[obj])
     monkeypatch.setattr(render_module,'bounds',lambda *a:(Vector((-dim.length/2,-60,0)),Vector((dim.length/2,60,dim.height))))
     monkeypatch.setattr(render_module,'read_facts',lambda _: {})
     monkeypatch.setattr(render_module,'configure_engine',lambda *a:{'warnings':[],'device':'模拟设备'})
     meters = []
+    calibrations = []
+    def calibrate(scene, target):
+        assert not meters
+        calibrations.append(target)
+        return {'sun_sky_ratio':target, 'sun_energy':22.0}
+    monkeypatch.setattr(render_module,'meter_sun_sky',calibrate)
     def meter(*args):
         meters.append(tuple(camera.location))
         return {'exposure':[0,.2,.1,-.1,0][len(meters)-1],'median':.42,'p98':.8}
     monkeypatch.setattr(render_module,'meter_exposure',meter)
+    monkeypatch.setattr(render_module,'frame_quality',lambda *a:{'warnings':[], 'passed':True})
     monkeypatch.setattr(render_module,'anchors',lambda *a:{n:{'x':1,'y':2,'visible':True} for n in common.ANCHOR_NODES})
     encoded = []
     monkeypatch.setattr(render_module,'compose_video',lambda *a:encoded.append(a) or {'status':'ok'})
@@ -763,10 +807,22 @@ def test_render_orchestration_meters_five_times_and_exports_all_frames(
     payload = json.loads((tmp_path/'anchors.json').read_text())
     report = json.loads((tmp_path/'render_eevee.json').read_text())
     assert len(meters) == 5
+    target = 2.5 if 'dusk' in options else 4.0
+    assert calibrations == [target]
+    assert report['sun_sky_ratio'] == report['light_calibration']['sun_sky_ratio'] == target
+    assert report['sun_energy'] == 22.0
     duration = 1.25 if '--duration' in options else 6
     assert [m['time_s'] for m in report['metering_frames']] == [duration*i/4 for i in range(5)]
     assert len(payload['frames']) == len(report['camera_frames']) == len(rendered) == count
+    assert len(report['quality_frames']) == len(report['frame_seconds']) == count
     assert all((tmp_path/f['file']).is_file() and len(f['nodes']) == 6 for f in payload['frames'])
+    if shot['kind'] == 'analogy':
+        layout = common.analogy_layout(dim,shot['analogy_data'])
+        for frame in payload['frames']:
+            assert set(frame['dims']) == set(layout['dims'])
+            for name,point in layout['dims'].items():
+                assert frame['dims'][name]['x'] == pytest.approx((.3+point[0]/1000)*payload['width'])
+                assert frame['dims'][name]['y'] == pytest.approx((.8-point[1]/1000)*payload['height'])
     assert [f['exposure'] for f in payload['frames']] == rendered
     x0,y0,x1,y1 = report['safe_rect']
     width,height = report['resolution']
@@ -1009,3 +1065,425 @@ def test_surface_pin_skips_accessories_and_uses_body_center(render_module,monkey
     assert calls[1][2]['distance'] < calls[0][2]['distance']
     scene.ray_cast = lambda *args,**kwargs: (False,None,None,None,None,None)
     assert tuple(render_module.surface_pin(scene,None,[body,accessory])) == (0,0,0)
+
+
+@pytest.mark.parametrize('height,floor_size', [(51,3),(50,3),(51,3.2),(65,3)])
+def test_residential_height_preserves_facts_and_partial_floor(height,floor_size):
+    dim = common.derive_dimensions(facts(F_overall_height=height))
+    a = {'ref':'building_floor','fact':'F_overall_height','ref_size_m':floor_size,'ratio':round(height/floor_size,3)}
+    layout = common.analogy_layout(dim,a)
+    assert len(layout['floors']) == math.ceil(height/floor_size)
+    assert sum(layout['floors']) == pytest.approx(height,abs=.00001)
+    assert layout['floors'][-1] == pytest.approx(height-(len(layout['floors'])-1)*floor_size)
+    assert layout['bounds'][1][1] == layout['dims']['ref_top'][1] == dim.height
+    assert layout['bounds'][0][0]-(dim.span/2+1.2) == pytest.approx(20)
+
+
+@pytest.mark.parametrize('length,ref_size', [(104,105),(120,105),(104,100)])
+def test_field_length_and_parallel_scale(length,ref_size):
+    dim = common.derive_dimensions(facts(F_girder_length=length))
+    layout = common.analogy_layout(dim,{'ref':'football_field','fact':'F_girder_length','ref_size_m':ref_size,'ratio':round(length/ref_size,3)})
+    assert layout['length'] == ref_size
+    assert layout['dims']['ref_right'][0]-layout['dims']['ref_left'][0] == ref_size
+    assert layout['dims']['crane_right'][0]-layout['dims']['crane_left'][0] == length
+
+
+@pytest.mark.parametrize('ref,fact,size,ratio', [('building_floor','F_overall_height',3,20),('football_field','F_span',105,.99),('bus','F_girder_length',12,8.67)])
+def test_analogy_rejects_inconsistent_facts(ref,fact,size,ratio):
+    with pytest.raises(ValueError):
+        common.analogy_layout(common.derive_dimensions({}),{'ref':ref,'fact':fact,'ref_size_m':size,'ratio':ratio})
+
+
+@pytest.mark.parametrize('ref,size,fact', [('building_floor',3,'F_overall_height'),('football_field',105,'F_girder_length')])
+@pytest.mark.parametrize('resolution', [(1920,1080),(960,540)])
+def test_analogy_camera_full_frame_and_physical_pose(ref,size,fact,resolution):
+    dim = common.derive_dimensions({})
+    layout = common.analogy_layout(dim,{'ref':ref,'fact':fact,'ref_size_m':size,'ratio':(dim.height if ref=='building_floor' else dim.length)/size})
+    safe = (.08,.23,.92,.80)
+    poses = []
+    for time in (0,3,6):
+        position,target,shift,fov = common.analogy_camera(dim,layout,time,*resolution,safe)
+        poses.append(position)
+        assert position[1] == (20 if ref == 'building_floor' else 120)
+        if ref == 'football_field':
+            assert math.degrees(math.atan2(position[1]-target[1],position[2]-target[2])) == pytest.approx(35)
+        else:
+            assert 36*resolution[1]/max(resolution)/(2*math.tan(math.radians(fov)/2)) == pytest.approx(35)
+        points = common.framing_points(dim)+common.enclosing_corners(layout['bounds'])+list(layout['dims'].values())
+        for point in points:
+            q = common.project_point(point,position,target,*resolution,fov)
+            x,y = q['x']/resolution[0]+shift[0],q['y']/resolution[1]+shift[1]
+            assert safe[0]-1e-8 <= x <= safe[2]+1e-8
+            assert safe[1]-1e-8 <= y <= safe[3]+1e-8
+    if ref == 'building_floor':
+        assert math.dist(poses[0],poses[-1]) == pytest.approx(3)
+
+
+@pytest.fixture
+def geometry_runtime(monkeypatch):
+    """执行实际网格构造，仅替换运行时对象容器，不启动图形进程。"""
+    import numpy as np
+    from types import SimpleNamespace as NS
+    class Vector(np.ndarray):
+        def __new__(cls,values):
+            return np.array(values,dtype=float).view(cls)
+        x = property(lambda self: self[0])
+        y = property(lambda self: self[1])
+        z = property(lambda self: self[2])
+        def cross(self,other):
+            return Vector(np.cross(self,other))
+        def normalized(self):
+            return self/np.linalg.norm(self)
+        def normalize(self):
+            self[:] = self.normalized()
+    class Parent(dict):
+        matrix_world = NS(inverted=lambda:None)
+    fake = NS(data=NS(objects=NS(new=lambda *a:Parent())),
+              context=NS(collection=NS(objects=NS(link=lambda _:None)),view_layer=NS(update=lambda:None)))
+    monkeypatch.setitem(sys.modules,'bpy',fake)
+    monkeypatch.setitem(sys.modules,'mathutils',NS(Vector=Vector))
+    monkeypatch.setitem(sys.modules,'common',common)
+    spec = importlib.util.spec_from_file_location('crane_t19_test',ROOT/'blender/crane.py')
+    module = importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+    monkeypatch.setitem(sys.modules,'crane',module)
+    batches = []
+    module.real_finish = module.Geometry.finish
+    monkeypatch.setattr(module.Geometry,'finish',lambda self:batches.append(self.batches) or [])
+    monkeypatch.setattr(module,'curve_hook',lambda *args:None)
+    return module,batches
+
+
+@pytest.mark.parametrize('height,girder', [(51,6.5),(65,8),(58,7)])
+def test_actual_crane_mesh_envelope_and_taper(geometry_runtime,height,girder):
+    module,batches = geometry_runtime
+    dim = common.derive_dimensions(facts(F_overall_height=height,F_girder_height=girder))
+    module.build_crane(dim,{'metal':None})
+    vertices = [v for data in batches[0].values() for v in data[0]]
+    assert max(v[2] for v in vertices)-min(v[2] for v in vertices) == pytest.approx(height,abs=.01)
+    assert max(v[0] for v in vertices)-min(v[0] for v in vertices) == pytest.approx(dim.length,abs=.01)
+    profile = common.rigid_leg_profile(dim)
+    assert profile['base_width'] == girder*3.2 and profile['top_width'] == girder*1.2
+    assert dim.girder_top+profile['top_extension'] <= height
+    assert all(node.startswith('leg_') for node,mat,_ in batches[0] if mat == 'hazard')
+
+
+def test_reference_mesh_rooftop_and_field_surface(geometry_runtime):
+    module,batches = geometry_runtime
+    spec = importlib.util.spec_from_file_location('scene_t19_test',ROOT/'blender/scene.py')
+    scene = importlib.util.module_from_spec(spec);spec.loader.exec_module(scene)
+    dim = common.derive_dimensions(facts(F_overall_height=50))
+    for ref,size,fid,value in [('building_floor',3,'F_overall_height',50),('football_field',105,'F_girder_length',104)]:
+        layout = common.analogy_layout(dim,{'ref':ref,'ref_size_m':size,'fact':fid,'ratio':round(value/size,3)})
+        g = module.Geometry({},{});scene.analogy_reference(g,layout)
+        if ref == 'building_floor':
+            vertices = [v for batch in g.batches.values() for v in batch[0]]
+            assert max(v[2] for v in vertices) == pytest.approx(50,abs=.01)
+        else:
+            grass = [v for (_,material,_),batch in g.batches.items() if material.startswith('grass_') for v in batch[0]]
+            assert max(v[0] for v in grass)-min(v[0] for v in grass) == 105
+
+
+def test_afternoon_exposure_target_and_cli(render_module):
+    assert render_module.arguments(['--facts','f','--shot-json','{}','--out','o']).look == 'afternoon'
+    assert render_module.arguments(['--facts','f','--shot-json','{}','--out','o','--look','dusk']).look == 'dusk'
+    _,stats = common.solve_exposure(lambda ev:{'median':.2*2**ev,'p98':.3*2**ev},target=.44)
+    assert stats['median'] == pytest.approx(.44,abs=.001)
+
+
+def test_yard_detail_geometry_is_finite_and_keeps_human_scale(geometry_runtime):
+    module,_ = geometry_runtime
+    spec = importlib.util.spec_from_file_location('yard_t19_test',ROOT/'blender/scene.py')
+    scene = importlib.util.module_from_spec(spec);spec.loader.exec_module(scene)
+    g = module.Geometry({},{})
+    scene.yard(g,common.derive_dimensions({}))
+    before = {}
+    for (node,_,_),batch in g.batches.items():
+        before.setdefault(node,[]).extend(batch[0])
+        assert all(math.isfinite(v) for point in batch[0] for v in point)
+        assert all(0 <= index < len(batch[0]) for face in batch[1] for index in face)
+    assert len([key for key in before if key.startswith('decor_crawler_')]) == 2
+    assert len([key for key in before if key.startswith('decor_factory_')]) == 3
+    workers = [vertices for key,vertices in before.items() if key.startswith('decor_worker_')]
+    assert 12 <= len(workers) <= 20
+    assert all(max(v[2] for v in vertices) == pytest.approx(1.75) for vertices in workers)
+    lamps = [vertices for key,vertices in before.items() if key.startswith('decor_lamp_')]
+    assert len(lamps) == 6
+    assert all(max(v[2] for v in vertices) == pytest.approx(30) for vertices in lamps)
+    scene.orient_backdrop(g,35)
+    for (node,_,_),batch in g.batches.items():
+        if node.startswith('decor_factory_'):
+            assert all(math.isfinite(v) for point in batch[0] for v in point)
+            assert max(v[2] for v in batch[0]) <= 40
+
+
+def test_worker_groups_are_spaced_varied_and_repeatable():
+    workers = common.worker_layout(common.derive_dimensions({}))
+    assert workers == common.worker_layout(common.derive_dimensions({}))
+    for group in range(4):
+        members = [p for p in workers if p['group'] == group]
+        assert 3 <= len(members) <= 5
+        assert {p['walking'] for p in members} == {False,True}
+        assert len({p['yaw'] for p in members}) == len(members)
+        for i,p in enumerate(members):
+            for q in members[i+1:]:
+                assert 1 <= math.hypot(p['x']-q['x'],p['z']-q['z']) <= 3
+
+
+@pytest.mark.parametrize('energy,e_sun,e_sky,target,expected', [
+    (5.5, .2, .4, 4.0, 44.0),
+    (5.5, 2.0, .1, 4.0, 1.1),
+    (1.6, .2, .4, 2.5, 8.0),
+    (5.5, .4, .1, 4.0, 5.5),
+    (5.5, 4e-9, 1e-9, 4.0, 5.5),
+])
+def test_sun_energy_calibration_scales_linear_light(energy,e_sun,e_sky,target,expected):
+    calibrated = common.calibrate_sun_energy(energy,e_sun,e_sky,target)
+    assert calibrated == pytest.approx(expected)
+    assert e_sun*(calibrated/energy)/e_sky == pytest.approx(target)
+
+
+@pytest.mark.parametrize('index', range(4))
+@pytest.mark.parametrize('invalid', [0, -1, float('nan'), float('inf')])
+def test_sun_energy_calibration_rejects_invalid_measurement(index,invalid):
+    values = [5.5, .2, .4, 4.0]
+    values[index] = invalid
+    with pytest.raises(ValueError,match='光比标定失败'):
+        common.calibrate_sun_energy(*values)
+
+
+@pytest.mark.parametrize('engine', ['BLENDER_EEVEE','CYCLES'])
+@pytest.mark.parametrize('failure', [None, 'mask', 'render', 'zero'])
+def test_light_probes_isolate_sources_and_restore_settings(render_module,monkeypatch,engine,failure):
+    from types import SimpleNamespace as NS
+    import numpy as np
+    settings = NS(file_format='PNG',color_mode='RGB',color_depth='8')
+    render = NS(resolution_x=1920,resolution_y=1080,resolution_percentage=50,
+                film_transparent=True,image_settings=settings,engine=engine)
+    sun = NS(type='LIGHT',data=NS(type='SUN',energy=5.5))
+    strength = NS(default_value=.55)
+    scene = NS(objects=[sun],render=render,view_settings=NS(exposure=3),
+        eevee=NS(taa_render_samples=24),cycles=NS(samples=64,use_adaptive_sampling=True,use_denoising=True),
+        world=NS(node_tree=NS(nodes={'Background':NS(inputs={'Strength':strength})})))
+    calls, removed, paths = [], [], []
+    def mask(*args):
+        assert (render.resolution_x,render.resolution_y) == (192,108)
+        if failure == 'mask':
+            raise RuntimeError('光比标定失败：受光地面不足')
+        return list(range(32))
+    monkeypatch.setattr(render_module,'sunlit_ground_indices',mask)
+    def do_render(**kwargs):
+        calls.append((sun.data.energy,strength.default_value))
+        assert kwargs == {'write_still':False}
+        assert render.resolution_percentage == 100 and not render.film_transparent
+        assert settings.file_format == 'OPEN_EXR' and settings.color_depth == '32'
+        assert scene.view_settings.exposure == 3
+        if failure == 'render' and len(calls) == 2:
+            raise RuntimeError('模拟探针失败')
+    def save(path,scene):
+        from pathlib import Path
+        paths.append(Path(path))
+        Path(path).write_bytes(b'probe')
+    def load(*args,**kwargs):
+        # 掩码外故意放入极亮像素，不应影响地面中位数。
+        values = np.full((192*108,4),1000,dtype=np.float32)
+        values[:32,:3] = .4 if sun.data.energy == 0 else (0 if failure == 'zero' else .2)
+        return NS(size=(192,108),pixels=NS(foreach_get=lambda buf:buf.__setitem__(slice(None),values.ravel())))
+    monkeypatch.setitem(sys.modules,'bpy',NS(context=NS(view_layer=NS(update=lambda:None)),
+        ops=NS(render=NS(render=do_render)),data=NS(images=NS(
+            get=lambda _:NS(save_render=save),load=load,remove=removed.append))))
+    if failure:
+        with pytest.raises((RuntimeError,ValueError)):
+            render_module.meter_sun_sky(scene)
+        assert sun.data.energy == 5.5
+    else:
+        result = render_module.meter_sun_sky(scene)
+        assert calls == [(0,.55),(5.5,0)]
+        assert result['sun_energy'] == sun.data.energy == pytest.approx(44)
+        assert result['sun_sky_ratio'] == pytest.approx(4)
+        assert result['measured_ratio_before'] == pytest.approx(.5)
+        assert result['e_sky'] == pytest.approx(.4)
+        assert result['sample_count'] == 32
+    assert strength.default_value == .55 and scene.view_settings.exposure == 3
+    assert (render.resolution_x,render.resolution_y,render.resolution_percentage) == (1920,1080,50)
+    assert render.film_transparent
+    assert vars(settings) == dict(file_format='PNG',color_mode='RGB',color_depth='8')
+    assert scene.eevee.taa_render_samples == 24
+    assert vars(scene.cycles) == dict(samples=64,use_adaptive_sampling=True,use_denoising=True)
+    assert len(removed) == len(paths)
+    assert all(not path.exists() for path in paths)
+
+
+def test_quality_metrics_use_display_samples_and_warn_for_failures():
+    samples = {'crane':[(.8,.2,.1)]*4, 'sunlit_paint':[(.8,.4,.2)]*4,
+               'shaded_paint':[(.16,.08,.04)]*4,'ground':[(.36,.36,.36)]*4,
+               'crane_shadow':[(.16,.16,.16)]*4,'sunlit_ground':[(.4,.4,.4)]*4}
+    result = common.quality_statistics(samples)
+    assert result['passed'] and result['warnings'] == []
+    assert result['crane_mean_saturation'] == pytest.approx(.875)
+    assert result['sunlit_paint_median_hue_deg'] == pytest.approx(20)
+    assert result['sunlit_paint_median_saturation'] == pytest.approx(.75)
+    assert result['sunlit_to_shaded_ratio'] == pytest.approx(5)
+    assert result['shadow_to_sunlit_ground_ratio'] == pytest.approx(.4)
+    samples['shaded_paint'] = samples['sunlit_paint']
+    samples['ground'] = [(1,1,1)]*4
+    samples['crane_shadow'] = samples['sunlit_ground']
+    samples['sunlit_paint'] = [(.8,.8,.8)]*4
+    samples['shaded_paint'] = samples['sunlit_paint']
+    assert len(common.quality_statistics(samples)['warnings']) == 5
+    missing = common.quality_statistics({})
+    assert missing['sunlit_to_shaded_ratio'] is None
+    assert not missing['passed'] and len(missing['warnings']) == 5
+
+
+@pytest.mark.parametrize('kind', ['model_orbit','analogy'])
+def test_factories_have_complete_visible_outline_at_review_cameras(geometry_runtime,kind):
+    module,batches = geometry_runtime
+    dim = common.derive_dimensions({})
+    module.build_crane(dim,{'metal':None})
+    by_node = {}
+    for (node,_,_),batch in batches[0].items():
+        if node not in {'rail_left','rail_right'}:
+            by_node.setdefault(node,[]).extend((x,z,-y) for x,y,z in batch[0])
+    protected = [common.enclosing_corners(points) for points in by_node.values()]
+    protected.append(common.enclosing_corners([(-18,1.2,-26),(18,15.2,-4)]))
+    silhouette = common.enclosing_corners([p for points in protected[:-1] for p in points])
+    if kind == 'analogy':
+        reference = common.analogy_layout(dim,{'ref':'building_floor','fact':'F_overall_height','ref_size_m':3,'ratio':17})
+        protected.append(common.enclosing_corners(reference['bounds']))
+    poses = []
+    for t in sorted(set([6*i/8 for i in range(9)]+[2.5,3.7])):
+        if kind == 'analogy':
+            position,target,shift,fov = common.analogy_camera(dim,reference,t,1920,1080,(.08,.23,.92,.8))
+        else:
+            position,target,shift = common.safe_camera(silhouette,common.hero_azimuth({},t,6),(.05,.2,.95,.86),1920,1080)
+            fov = common.hero_fov_y(1920,1080)
+        poses.append({'position':position,'target':target,'shift':shift,'fov':fov})
+    placements = common.backdrop_layout(poses,protected,1920,1080)
+    assert len(placements) == 3
+    assert all(250 <= p['depth_m'] <= 450 for p in placements)
+    for i,pose in enumerate(poses):
+        assert any(p['visible'][i] for p in placements), (kind,i,placements)
+        rects = [common.projected_rect(p['points'],pose,1920,1080) for p in placements]
+        def separate(a,b):
+            return a[2] < b[0] or a[0] > b[2] or a[3] < b[1] or a[1] > b[3]
+        assert any(p['visible'][i] and all(j == k or separate(rects[j],rects[k])
+                   for k in range(3)) for j,p in enumerate(placements)), (kind,i,rects)
+
+
+def test_linked_meshes_preserve_world_geometry_after_backdrop_rotation(geometry_runtime,monkeypatch):
+    import numpy as np
+    from types import SimpleNamespace as NS
+    module,_ = geometry_runtime
+    Vector = sys.modules['mathutils'].Vector
+    class Matrix(np.ndarray):
+        def __new__(cls,value):
+            return np.array(value,dtype=float).view(cls)
+        @staticmethod
+        def Identity(n):
+            return Matrix(np.eye(n))
+        @staticmethod
+        def Translation(v):
+            m = Matrix.Identity(4); m[:3,3] = v
+            return m
+        @staticmethod
+        def Rotation(angle,n,axis):
+            assert axis == 'Z'
+            m = Matrix.Identity(n); c,s = math.cos(angle),math.sin(angle)
+            m[:2,:2] = ((c,-s),(s,c))
+            return m
+        def transposed(self):
+            return Matrix(self.T)
+        def to_4x4(self):
+            m = Matrix.Identity(4); m[:3,:3] = self
+            return m
+        def inverted(self):
+            return Matrix(np.linalg.inv(self))
+        def __matmul__(self,other):
+            if np.shape(other) == (3,) and self.shape == (4,4):
+                return Vector(np.asarray(self).dot([*other,1])[:3])
+            return Matrix(np.asarray(self) @ np.asarray(other))
+        translation = property(lambda self:Vector(self[:3,3]),lambda self,v:self.__setitem__((slice(0,3),3),v))
+    class Mesh:
+        def __init__(self,name):
+            self.name,self.materials = name,[]
+        def from_pydata(self,vertices,edges,faces):
+            self.vertices = vertices
+            self.polygons = [NS() for _ in faces]
+        def update(self):
+            pass
+    class Object(dict):
+        def __init__(self,name,mesh):
+            super().__init__(); self.name,self.data = name,mesh
+    fake = NS(data=NS(meshes=NS(new=Mesh),objects=NS(new=Object)),
+              context=NS(collection=NS(objects=NS(link=lambda _:None))))
+    monkeypatch.setitem(sys.modules,'mathutils',NS(Vector=Vector,Matrix=Matrix))
+    monkeypatch.setattr(module,'bpy',fake)
+    g = module.Geometry({'metal':object(),'paint':object()}, {})
+    g.cylinder('decor_crawler_0',(1,2,3),(8,4,6),.2,'metal',8)
+    g.cylinder('decor_crawler_1',(-5,3,1),(-5,23,1),.6,'metal',8)
+    g.instance_detail = True
+    g.bar('girder',(0,10,0),(0,11,0),.1)
+    g.bar('girder',(4,10,0),(4,11,0),.1)
+    g.instance_detail = False
+    g.box('decor_lamp_0',(4,.3,1),(20,29.65,-10),'metal')
+    g.box('decor_lamp_1',(4,.3,1),(-20,29.65,40),'metal')
+    scene_spec = importlib.util.spec_from_file_location('instance_scene',ROOT/'blender/scene.py')
+    scene = importlib.util.module_from_spec(scene_spec);scene_spec.loader.exec_module(scene)
+    scene.orient_backdrop(g,35)
+    objects = module.real_finish(g)
+    for obj,batch in zip(objects,g.batches.values()):
+        actual = [tuple(obj.matrix_world @ Vector(v)) for v in obj.data.vertices]
+        assert np.asarray(actual) == pytest.approx(np.asarray(batch[0]),abs=1e-5)
+    assert objects[0].data is objects[1].data
+    assert objects[2].data is objects[3].data
+    assert objects[4].data is objects[5].data
+
+
+def test_final_frame_quality_classifies_actual_rays_and_encoded_pixels(render_module,geometry_runtime,monkeypatch,tmp_path):
+    import numpy as np
+    from types import SimpleNamespace as NS
+    Vector = sys.modules['mathutils'].Vector
+    class Object(dict):
+        hide_render = False
+        def as_pointer(self):
+            return id(self)
+    crane = Object(geometry_material='paint',geometry_node='girder')
+    ground = Object(geometry_material='concrete',geometry_node='ground')
+    rgba = np.ones((54,96,4),dtype=np.float32)
+    rgba[:,:24,:3] = (.8,.4,.2)
+    rgba[:,24:48,:3] = (.16,.08,.04)
+    rgba[:,48:72,:3] = (.16,.16,.16)
+    rgba[:,72:,:3] = (.4,.4,.4)
+    image = NS(colorspace_settings=NS(name='sRGB'),size=(96,54),
+               pixels=NS(foreach_get=lambda buffer:buffer.__setitem__(slice(None),rgba.ravel())))
+    removed = []
+    identity = NS(to_3x3=lambda:np.eye(3),translation=Vector((0,0,10)))
+    scene = NS(camera=NS(matrix_world=identity,data=NS(view_frame=lambda **kw:[
+        Vector((-1,-1,-1)),Vector((1,-1,-1)),Vector((1,1,-1)),Vector((-1,1,-1))])),
+        objects=[NS(type='LIGHT',data=NS(type='SUN'),matrix_world=identity)])
+    def cast(graph,start,direction,distance):
+        if start[2] == 10:
+            x = direction[0]/-direction[2]
+            obj = crane if x < 0 else ground
+            normal = Vector((0,0,-1 if -.5 < x < 0 else 1))
+            return True,Vector((x,0,0)),normal,0,obj,None
+        # 地面中间一带由门机遮挡太阳。
+        if 0 < start[0] < .5:
+            return True,Vector((0,0,2)),Vector((0,0,1)),0,crane,None
+        return False,None,None,None,None,None
+    scene.ray_cast = cast
+    monkeypatch.setitem(sys.modules,'bpy',NS(data=NS(images=NS(load=lambda *a,**kw:image,remove=removed.append)),
+        context=NS(evaluated_depsgraph_get=lambda:None)))
+    result = render_module.frame_quality(scene,tmp_path/'frame.png',[crane])
+    assert result['sample_counts']['crane'] == 2592
+    assert result['sample_counts']['crane_shadow'] == 1296
+    assert result['sunlit_to_shaded_ratio'] == pytest.approx(5,rel=1e-6)
+    assert result['shadow_to_sunlit_ground_ratio'] == pytest.approx(.4,rel=1e-6)
+    assert result['crane_mean_saturation'] == pytest.approx(.75,rel=1e-6)
+    assert image.colorspace_settings.name == 'Non-Color' and removed == [image]
+    indices = render_module.sunlit_ground_indices(scene,scene.objects[0],96,54)
+    assert len(indices) == 1296
+    assert all(index % 96 >= 72 for index in indices)
+    ground['geometry_node'] = 'water'
+    with pytest.raises(RuntimeError,match='受光混凝土地面不足'):
+        render_module.sunlit_ground_indices(scene,scene.objects[0],96,54)

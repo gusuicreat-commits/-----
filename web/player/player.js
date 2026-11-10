@@ -1,5 +1,5 @@
 import {applyTwilight} from './shots/theme.js';
-import {backgroundFrame,anchorPoints,loadBackgrounds,showBackground} from './background.js';
+import {backgroundFrame,anchorPoints,dimensionPoints,loadBackgrounds,showBackground} from './background.js';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
@@ -64,6 +64,7 @@ async function drawFrame(t){
   const frame=backgroundFrame(shot.bg,localT);
   await showBackground($('bg-frame'),shot.bg,frame,ctx.resolve,ctx.preloaded);
   $('scene').style.visibility='hidden';
+  if(shot.kind==='analogy')analogy.renderBackground(ctx,shot,localT,dimensionPoints(ctx.backgroundAnchors.get(shot.id),frame,shot.bg));
   if(shot.kind==='exploded')exploded.renderBackground(ctx,shot,localT,anchorPoints(ctx.backgroundAnchors.get(shot.id),frame,shot.bg));
   if(shot.kind==='model_orbit')labelNodes(ctx,shot.params.highlight||[],{pointSource:anchorPoints(ctx.backgroundAnchors.get(shot.id),frame,shot.bg)});
  }else{

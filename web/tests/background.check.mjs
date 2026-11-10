@@ -179,3 +179,27 @@ for(const width of [1840,1380.8])for(const shift of [0,-400])test(`写实引线�
   }
  }
 });
+
+const {dimensionPoints}=await import('../player/background.js');
+const {renderBackground:renderAnalogy,setup:setupAnalogy,render:renderAnalogyModel}=await import('../player/shots/analogy.js');
+const analogyTimeline=JSON.parse(await readFile(new URL('./fixtures/background/analogy-timeline.json',import.meta.url)));
+for(const [index,axis] of ['height','length'].entries())test(`写实类比${axis}端点按实际锚点缩放且乱序定位确定`,async()=>{
+ const payload=JSON.parse(await readFile(new URL(`./fixtures/background/analogy-${axis}-anchors.json`,import.meta.url)));
+ const shot=analogyTimeline.shots[index],ctx={timeline:analogyTimeline,content:{innerHTML:''},labels:{innerHTML:''}};
+ setupAnalogy(ctx,shot);renderAnalogyModel(ctx,shot,0,1.5);
+ const saved=new Map();
+ for(const frame of [1,3,2,1]){
+  const points=dimensionPoints(payload,frame,shot.bg);
+  renderAnalogy(ctx,shot,.8,points);
+  const lines=[...ctx.labels.innerHTML.matchAll(/<path d="M ([\d.]+) ([\d.]+) L ([\d.]+) ([\d.]+)/g)];
+  assert.equal(lines.length,2);
+  const names=axis==='height'?[['crane_bottom','crane_top'],['ref_bottom','ref_top']]:[['crane_left','crane_right'],['ref_left','ref_right']];
+  lines.forEach((line,i)=>{
+   const [a,b]=names[i].map(k=>payload.frames[frame-1].dims[k]);
+   assert.deepEqual(line.slice(1).map(Number),[a.x*2,a.y*2,b.x*2,b.y*2]);
+  });
+  if(saved.has(frame))assert.equal(ctx.labels.innerHTML,saved.get(frame));
+  saved.set(frame,ctx.labels.innerHTML);
+ }
+ assert.throws(()=>dimensionPoints({},1,shot.bg),/缺少尺寸锚点/);
+});
