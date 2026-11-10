@@ -1,0 +1,42 @@
+{
+  "axes": {
+    "trolley": {
+      "node": "trolley",
+      "axis": "x",
+      "range_m": [
+        -38,
+        38
+      ],
+      "speed_fact": "F_trolley_speed"
+    },
+    "hoist": {
+      "node": "hoist_hook",
+      "axis": "y",
+      "range_m": [
+        2,
+        36
+      ],
+      "speed_fact": "F_hoist_speed"
+    },
+    "gantry": {
+      "node": "crane",
+      "axis": "z",
+      "range_m": [
+        -40,
+        40
+      ],
+      "speed_fact": "F_gantry_speed"
+    }
+  },
+  "bbox_m": {
+    "x": 104,
+    "y": 51,
+    "z": 20
+  },
+  "derived_from": [
+    "F_girder_length",
+    "F_overall_height",
+    "F_span",
+    "F_lift_height"
+  ]
+}

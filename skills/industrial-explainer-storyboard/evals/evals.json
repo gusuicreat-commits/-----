@@ -1,0 +1,364 @@
+{
+  "skill_name": "industrial-explainer-storyboard",
+  "evals": [
+    {
+      "id": 1,
+      "name": "standard",
+      "prompt": "依据已确认参数，为 1230 t 造船门机制作 45 秒科普分镜，解释尺度、结构、运动和焊缝精度；使用提供的参考实拍。",
+      "expected_output": "45 秒科普分镜，引用已确认参数和参考实拍；包含结构、运动、精度与参数卡。",
+      "files": [
+        "fixtures/standard/facts.json",
+        "fixtures/standard/assets.json",
+        "fixtures/standard/brief.md",
+        "fixtures/standard/project.json",
+        "fixtures/standard/rig.json"
+      ],
+      "assertions": [
+        {
+          "id": "no_blocks",
+          "type": "no_blocks",
+          "description": "真实性校验无 block 且无检查失败"
+        },
+        {
+          "id": "schema",
+          "type": "schema",
+          "description": "交付符合 shotlist.schema.json"
+        },
+        {
+          "id": "shot_count",
+          "type": "shot_count",
+          "min": 6,
+          "max": 9,
+          "description": "6–9 个镜头"
+        },
+        {
+          "id": "duration",
+          "type": "duration",
+          "min": 40,
+          "max": 50,
+          "description": "指定目标时长内"
+        },
+        {
+          "id": "confirmed_only",
+          "type": "confirmed_only",
+          "description": "所有直接与间接事实引用均 verified/confirmed"
+        },
+        {
+          "id": "computed_analogies",
+          "type": "computed_analogies",
+          "description": "每个类比 ratio/text 与程序重算一致"
+        },
+        {
+          "id": "reference_claim",
+          "type": "reference_claim",
+          "description": "参考实拍台词没有冒认本机"
+        },
+        {
+          "id": "required_kinds",
+          "type": "required_kinds",
+          "kinds": [
+            "real_media",
+            "data_card",
+            "motion",
+            "exploded",
+            "weld_macro"
+          ],
+          "description": "必要镜头完整"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "unverified",
+      "prompt": "制作 45 秒科普视频，特别要讲整机高度；有一条参数尚未确认，不能编造或改状态，请在报告明确待人工确认项。",
+      "expected_output": "不引用 F_overall_height，并在交付摘要提示该参数需人工确认。",
+      "files": [
+        "fixtures/unverified/facts.json",
+        "fixtures/unverified/assets.json",
+        "fixtures/unverified/brief.md",
+        "fixtures/unverified/project.json",
+        "fixtures/unverified/rig.json"
+      ],
+      "assertions": [
+        {
+          "id": "no_blocks",
+          "type": "no_blocks",
+          "description": "真实性校验无 block 且无检查失败"
+        },
+        {
+          "id": "schema",
+          "type": "schema",
+          "description": "交付符合 shotlist.schema.json"
+        },
+        {
+          "id": "shot_count",
+          "type": "shot_count",
+          "min": 6,
+          "max": 9,
+          "description": "6–9 个镜头"
+        },
+        {
+          "id": "duration",
+          "type": "duration",
+          "min": 40,
+          "max": 50,
+          "description": "指定目标时长内"
+        },
+        {
+          "id": "confirmed_only",
+          "type": "confirmed_only",
+          "description": "所有直接与间接事实引用均 verified/confirmed"
+        },
+        {
+          "id": "computed_analogies",
+          "type": "computed_analogies",
+          "description": "每个类比 ratio/text 与程序重算一致"
+        },
+        {
+          "id": "reference_claim",
+          "type": "reference_claim",
+          "description": "参考实拍台词没有冒认本机"
+        },
+        {
+          "id": "required_kinds",
+          "type": "required_kinds",
+          "kinds": [
+            "real_media",
+            "data_card",
+            "motion",
+            "exploded",
+            "weld_macro"
+          ],
+          "description": "必要镜头完整"
+        },
+        {
+          "id": "unused_height",
+          "type": "no_fact",
+          "fact": "F_overall_height",
+          "description": "不引用未确认的整机高度"
+        },
+        {
+          "id": "human_review",
+          "type": "human_review",
+          "fact": "F_overall_height",
+          "description": "交付摘要明确指出整机高度需人工确认"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "reference_only",
+      "prompt": "制作 45 秒展会视频，素材都是参考实拍，请突出应用场景，严格区分画面与本机。",
+      "expected_output": "参考实拍台词无“这台/本机/我们的”，保留参考素材标签。",
+      "files": [
+        "fixtures/reference_only/facts.json",
+        "fixtures/reference_only/assets.json",
+        "fixtures/reference_only/brief.md",
+        "fixtures/reference_only/project.json",
+        "fixtures/reference_only/rig.json"
+      ],
+      "assertions": [
+        {
+          "id": "no_blocks",
+          "type": "no_blocks",
+          "description": "真实性校验无 block 且无检查失败"
+        },
+        {
+          "id": "schema",
+          "type": "schema",
+          "description": "交付符合 shotlist.schema.json"
+        },
+        {
+          "id": "shot_count",
+          "type": "shot_count",
+          "min": 6,
+          "max": 9,
+          "description": "6–9 个镜头"
+        },
+        {
+          "id": "duration",
+          "type": "duration",
+          "min": 40,
+          "max": 50,
+          "description": "指定目标时长内"
+        },
+        {
+          "id": "confirmed_only",
+          "type": "confirmed_only",
+          "description": "所有直接与间接事实引用均 verified/confirmed"
+        },
+        {
+          "id": "computed_analogies",
+          "type": "computed_analogies",
+          "description": "每个类比 ratio/text 与程序重算一致"
+        },
+        {
+          "id": "reference_claim",
+          "type": "reference_claim",
+          "description": "参考实拍台词没有冒认本机"
+        },
+        {
+          "id": "required_kinds",
+          "type": "required_kinds",
+          "kinds": [
+            "real_media",
+            "data_card",
+            "motion",
+            "exploded",
+            "weld_macro"
+          ],
+          "description": "必要镜头完整"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "name": "missing_weld",
+      "prompt": "制作 45 秒科普视频，尽可能讲清结构和制造精度，缺参数时请明确说明。",
+      "expected_output": "不安排 weld_macro，不编造焊缝精度数字。",
+      "files": [
+        "fixtures/missing_weld/facts.json",
+        "fixtures/missing_weld/assets.json",
+        "fixtures/missing_weld/brief.md",
+        "fixtures/missing_weld/project.json",
+        "fixtures/missing_weld/rig.json"
+      ],
+      "assertions": [
+        {
+          "id": "no_blocks",
+          "type": "no_blocks",
+          "description": "真实性校验无 block 且无检查失败"
+        },
+        {
+          "id": "schema",
+          "type": "schema",
+          "description": "交付符合 shotlist.schema.json"
+        },
+        {
+          "id": "shot_count",
+          "type": "shot_count",
+          "min": 6,
+          "max": 9,
+          "description": "6–9 个镜头"
+        },
+        {
+          "id": "duration",
+          "type": "duration",
+          "min": 40,
+          "max": 50,
+          "description": "指定目标时长内"
+        },
+        {
+          "id": "confirmed_only",
+          "type": "confirmed_only",
+          "description": "所有直接与间接事实引用均 verified/confirmed"
+        },
+        {
+          "id": "computed_analogies",
+          "type": "computed_analogies",
+          "description": "每个类比 ratio/text 与程序重算一致"
+        },
+        {
+          "id": "reference_claim",
+          "type": "reference_claim",
+          "description": "参考实拍台词没有冒认本机"
+        },
+        {
+          "id": "required_kinds",
+          "type": "required_kinds",
+          "kinds": [
+            "real_media",
+            "data_card",
+            "motion",
+            "exploded"
+          ],
+          "description": "必要镜头完整"
+        },
+        {
+          "id": "no_weld",
+          "type": "no_kind",
+          "kind": "weld_macro",
+          "description": "不安排缺事实支持的微距"
+        },
+        {
+          "id": "no_weld_fact",
+          "type": "no_fact",
+          "fact": "F_weld_tolerance",
+          "description": "不编造精度参数"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "name": "photoreal_bid",
+      "prompt": "制作写实模式、投标场景的 30 秒视频分镜，克制陈述参数和出处，满足写实镜头顺序与数量规则。",
+      "expected_output": "30 秒写实投标分镜，满足全部 PHOTOREAL_* 规则和参数溯源。",
+      "files": [
+        "fixtures/photoreal_bid/facts.json",
+        "fixtures/photoreal_bid/assets.json",
+        "fixtures/photoreal_bid/brief.md",
+        "fixtures/photoreal_bid/project.json",
+        "fixtures/photoreal_bid/rig.json"
+      ],
+      "assertions": [
+        {
+          "id": "no_blocks",
+          "type": "no_blocks",
+          "description": "真实性校验无 block 且无检查失败"
+        },
+        {
+          "id": "schema",
+          "type": "schema",
+          "description": "交付符合 shotlist.schema.json"
+        },
+        {
+          "id": "shot_count",
+          "type": "shot_count",
+          "min": 6,
+          "max": 9,
+          "description": "6–9 个镜头"
+        },
+        {
+          "id": "duration",
+          "type": "duration",
+          "min": 29.5,
+          "max": 30.5,
+          "description": "指定目标时长内"
+        },
+        {
+          "id": "confirmed_only",
+          "type": "confirmed_only",
+          "description": "所有直接与间接事实引用均 verified/confirmed"
+        },
+        {
+          "id": "computed_analogies",
+          "type": "computed_analogies",
+          "description": "每个类比 ratio/text 与程序重算一致"
+        },
+        {
+          "id": "reference_claim",
+          "type": "reference_claim",
+          "description": "参考实拍台词没有冒认本机"
+        },
+        {
+          "id": "required_kinds",
+          "type": "required_kinds",
+          "kinds": [
+            "real_media",
+            "data_card",
+            "motion",
+            "exploded",
+            "weld_macro"
+          ],
+          "description": "必要镜头完整"
+        },
+        {
+          "id": "photoreal_rules",
+          "type": "no_code_prefix",
+          "prefix": "PHOTOREAL_",
+          "description": "写实偏好校验无警告"
+        }
+      ]
+    }
+  ]
+}

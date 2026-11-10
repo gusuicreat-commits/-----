@@ -1,0 +1,14 @@
+{
+  "requests": [
+    {
+      "fact": "F_girder_length",
+      "ref": "football_field",
+      "axis": "length"
+    },
+    {
+      "fact": "F_weld_tolerance",
+      "ref": "hair",
+      "axis": "thickness"
+    }
+  ]
+}

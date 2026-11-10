@@ -1,0 +1,556 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "工业装备分镜交付格式",
+  "type": "object",
+  "required": [
+    "version",
+    "title",
+    "fps",
+    "width",
+    "height",
+    "shots",
+    "analogies"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "title": {
+      "type": "string"
+    },
+    "fps": {
+      "type": "integer",
+      "const": 30
+    },
+    "width": {
+      "type": "integer",
+      "const": 1920
+    },
+    "height": {
+      "type": "integer",
+      "const": 1080
+    },
+    "shots": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "source",
+          "duration_s",
+          "narration",
+          "fact_refs",
+          "analogy_refs",
+          "asset_refs",
+          "params",
+          "review"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "title",
+              "outro",
+              "model_orbit",
+              "analogy",
+              "motion",
+              "exploded",
+              "data_card",
+              "real_media",
+              "ai_broll",
+              "weld_macro"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "model",
+              "real",
+              "ai",
+              "graphic"
+            ]
+          },
+          "duration_s": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "narration": {
+            "type": "string"
+          },
+          "fact_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          },
+          "analogy_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          },
+          "asset_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          },
+          "params": {
+            "type": "object"
+          },
+          "review": {
+            "type": "object",
+            "required": [
+              "status",
+              "note"
+            ],
+            "properties": {
+              "status": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              }
+            }
+          },
+          "narration_resolved": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "title"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "params": {
+                  "type": "object",
+                  "properties": {
+                    "title": {
+                      "type": "string"
+                    },
+                    "subtitle": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "title",
+                    "subtitle"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "outro"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "params": {
+                  "type": "object",
+                  "properties": {
+                    "title": {
+                      "type": "string"
+                    },
+                    "subtitle": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "title",
+                    "subtitle"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "model_orbit"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "params": {
+                  "type": "object",
+                  "properties": {
+                    "from_deg": {
+                      "type": "number"
+                    },
+                    "to_deg": {
+                      "type": "number"
+                    },
+                    "elevation_deg": {
+                      "type": "number"
+                    },
+                    "distance": {
+                      "type": "number"
+                    },
+                    "highlight": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "from_deg",
+                    "to_deg",
+                    "elevation_deg",
+                    "distance",
+                    "highlight"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "analogy"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "params": {
+                  "type": "object",
+                  "properties": {
+                    "analogy": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "analogy"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "motion"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "params": {
+                  "type": "object",
+                  "properties": {
+                    "axis": {
+                      "type": "string",
+                      "enum": [
+                        "trolley",
+                        "hoist",
+                        "gantry"
+                      ]
+                    },
+                    "from_m": {
+                      "type": "number"
+                    },
+                    "to_m": {
+                      "type": "number"
+                    },
+                    "speedup": {
+                      "type": "number",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "axis",
+                    "from_m",
+                    "to_m"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "exploded"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "params": {
+                  "type": "object",
+                  "properties": {
+                    "parts": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "spread_m": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "parts",
+                    "spread_m"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "data_card"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "params": {
+                  "type": "object",
+                  "properties": {
+                    "facts": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "facts"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "real_media"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "params": {
+                  "type": "object",
+                  "properties": {
+                    "asset": {
+                      "type": "string"
+                    },
+                    "effect": {
+                      "type": "string",
+                      "enum": [
+                        "kenburns",
+                        "none"
+                      ]
+                    },
+                    "caption": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "asset",
+                    "effect",
+                    "caption"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "ai_broll"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "params": {
+                  "type": "object",
+                  "properties": {
+                    "recipe": {
+                      "type": "string",
+                      "enum": [
+                        "sunrise_port",
+                        "night_factory",
+                        "blueprint_grid",
+                        "particles"
+                      ]
+                    },
+                    "palette": {
+                      "type": "string",
+                      "enum": [
+                        "warm",
+                        "cool",
+                        "steel"
+                      ]
+                    },
+                    "prompt": {
+                      "type": "string"
+                    },
+                    "caption": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "recipe",
+                    "palette",
+                    "prompt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "weld_macro"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "params": {
+                  "type": "object",
+                  "properties": {
+                    "fact": {
+                      "type": "string"
+                    },
+                    "analogy": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "fact",
+                    "analogy"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "analogies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "fact",
+          "ref",
+          "axis",
+          "ratio",
+          "text"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "fact": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string",
+            "enum": [
+              "football_field",
+              "building_floor",
+              "boeing747",
+              "bus",
+              "person",
+              "car",
+              "elephant",
+              "hair"
+            ]
+          },
+          "axis": {
+            "type": "string",
+            "enum": [
+              "length",
+              "height",
+              "mass",
+              "thickness"
+            ]
+          },
+          "ratio": {
+            "type": "number",
+            "minimum": 0
+          },
+          "text": {
+            "type": "string"
+          },
+          "ref_size_m": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "ref_size": {
+            "type": "number"
+          },
+          "ref_unit": {
+            "type": "string"
+          },
+          "basis": {
+            "type": "string"
+          },
+          "formula": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}

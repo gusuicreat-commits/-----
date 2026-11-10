@@ -1,0 +1,9 @@
+{
+  "model": {
+    "kind": "parametric",
+    "glb": "model/crane.glb",
+    "assumed": [],
+    "dims_check": []
+  },
+  "render_mode": "standard"
+}
