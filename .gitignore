@@ -11,3 +11,6 @@ web/playwright-report/
 *.log
 skills/**/__pycache__/
 skills/*/evals/workspace/
+
+# 渲染成片与中间产物（体积大，不入库）
+outputs/

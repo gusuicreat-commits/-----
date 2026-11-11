@@ -59,13 +59,23 @@ def visual_qa(pid: str, run: str, *, base_url: str) -> dict:
         for shot in shots:
             storage.safe_path(target, f"{shot['id']}.png").unlink(missing_ok=True)
         times = [shot["start"] + .6 * (shot["end"] - shot["start"]) for shot in shots]
-        with tempfile.TemporaryDirectory(dir=directory / "renders", prefix="qa-") as temp:
-            subprocess.run(["node", str(config.ROOT / "web/render/render.mjs"), "--url", player_url(pid, base_url),
-                            "--frames-at", ",".join(str(t) for t in times), "--frames-dir", temp],
-                           check=True, capture_output=True, timeout=600)
-            for index, (shot, at) in enumerate(zip(shots, times), 1):
-                source = Path(temp) / f"frame-{index:03d}-{at:.3f}.png"
-                source.replace(storage.safe_path(target, f"{shot['id']}.png"))
+        if storage.read_json(pid, "project.json").get("render_mode") == "scale_film":
+            from app.media.tts import ffmpeg
+            video = directory / "renders/final.mp4"
+            if not video.is_file():
+                raise ValueError("尺度短片最终视频不存在，不能质检旧播放器")
+            for shot, at in zip(shots, times):
+                subprocess.run([ffmpeg(), "-y", "-v", "error", "-ss", str(at), "-i", str(video),
+                                "-frames:v", "1", str(storage.safe_path(target, f"{shot['id']}.png"))],
+                               check=True, capture_output=True, timeout=60)
+        else:
+            with tempfile.TemporaryDirectory(dir=directory / "renders", prefix="qa-") as temp:
+                subprocess.run(["node", str(config.ROOT / "web/render/render.mjs"), "--url", player_url(pid, base_url),
+                                "--frames-at", ",".join(str(t) for t in times), "--frames-dir", temp],
+                               check=True, capture_output=True, timeout=600)
+                for index, (shot, at) in enumerate(zip(shots, times), 1):
+                    source = Path(temp) / f"frame-{index:03d}-{at:.3f}.png"
+                    source.replace(storage.safe_path(target, f"{shot['id']}.png"))
         for offset in range(0, len(shots), 10):
             batch = shots[offset:offset + 10]
             prompt = json.dumps([{"id": s["id"], "kind": s["kind"], "source": s["source"],

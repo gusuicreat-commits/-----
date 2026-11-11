@@ -1,0 +1,264 @@
+{
+  "version": 1,
+  "recipes": {
+    "scale": {
+      "question": "它究竟有多大？先给参照，再让观众看到整体。",
+      "intent_words": [
+        "尺度",
+        "多大",
+        "尺寸",
+        "scale",
+        "高度",
+        "长度",
+        "多长",
+        "多高",
+        "有多大",
+        "到底有多大",
+        "多宽"
+      ],
+      "requires": {
+        "facts": "有出处且 confirmed/verified 的正数主梁总长(girder_length)或整机高度(overall_height)，只支持 m/mm；ID/key/name 不得指向跨度、起升高度或其他部件尺寸",
+        "model_nodes": [
+          "girder"
+        ],
+        "rig": "不需要"
+      },
+      "sequence": [
+        {
+          "role": "建立整体轮廓",
+          "kind": "model_orbit",
+          "weight": 3,
+          "params": {
+            "from_deg": -24,
+            "to_deg": -12,
+            "elevation_deg": 10,
+            "distance": 1.35,
+            "highlight": [
+              "girder"
+            ]
+          }
+        },
+        {
+          "role": "同一基准比较尺度",
+          "kind": "analogy",
+          "weight": 7,
+          "params": {
+            "analogy": "$analogy_id"
+          }
+        },
+        {
+          "role": "回到整体并落到出处",
+          "kind": "data_card",
+          "weight": 5,
+          "params": {
+            "facts": [
+              "$fact_id"
+            ]
+          }
+        }
+      ],
+      "forbidden": [
+        "无确认尺寸不得用默认模型尺寸当参数",
+        "不能为画面冲击篡改 ratio 或把比例图说成真实场景",
+        "无真实模型节点不得安排模型画面；必讲缺证据交人工",
+        "当前 analogy 长度画面量 girder，竖向画面量整机 crane；跨度、起升高度、臂长或部件尺寸禁止借用这两种几何画面"
+      ],
+      "observe_and_rework": [
+        {
+          "observe": "首镜整体未裁切；比较镜头设备与参照物同屏、同基准，画面大小与已计算比例一致",
+          "failure": "参照物看不见或比例误导",
+          "rework": "重构取景/参照物布局，保持 ratio 不变，人工复看"
+        },
+        {
+          "observe": "静音看完能答出比较的是长度还是高度；最后参数与页码可读",
+          "failure": "观众只看到数字或读不完来源",
+          "rework": "删多余信息，延长比较或出处停留，压缩开场"
+        }
+      ],
+      "render_profiles": {
+        "scale_film": {
+          "version": 1,
+          "target_s": [
+            15,
+            30
+          ],
+          "axis": "length",
+          "model_kind": "parametric",
+          "shots": [
+            {
+              "role": "detail",
+              "kind": "model_orbit",
+              "weight": 4,
+              "narration": "主梁，到底多长？"
+            },
+            {
+              "role": "hero",
+              "kind": "model_orbit",
+              "weight": 5,
+              "narration": "主梁总长$F。"
+            },
+            {
+              "role": "compare",
+              "kind": "analogy",
+              "weight": 6,
+              "narration": "$A。"
+            }
+          ]
+        }
+      }
+    },
+    "motion": {
+      "question": "究竟是哪一部分沿哪个方向移动？",
+      "intent_words": [
+        "运动",
+        "怎么动",
+        "小车",
+        "起升",
+        "motion",
+        "行程"
+      ],
+      "requires": {
+        "facts": "已确认且有出处的正数 m/min 速度，ID 与 rig.speed_fact 一致",
+        "model_nodes": "rig 当前轴的 node 必须存在",
+        "rig": "trolley/hoist/gantry 中的实际轴、有限递增 range_m；输入 rig 不是现场校准证明"
+      },
+      "sequence": [
+        {
+          "role": "先定位会动的部件",
+          "kind": "model_orbit",
+          "weight": 3,
+          "params": {
+            "from_deg": -20,
+            "to_deg": -10,
+            "elevation_deg": 15,
+            "distance": 1.4,
+            "highlight": [
+              "$node"
+            ]
+          }
+        },
+        {
+          "role": "固定参照观察单轴位移",
+          "kind": "motion",
+          "weight": 8,
+          "params": {
+            "axis": "$axis",
+            "from_m": "$from_m",
+            "to_m": "$to_m"
+          }
+        },
+        {
+          "role": "回扣轴与速度出处",
+          "kind": "data_card",
+          "weight": 4,
+          "params": {
+            "facts": [
+              "$fact_id"
+            ]
+          }
+        }
+      ],
+      "forbidden": [
+        "缺轴/节点/有效行程/确认速度禁止运动镜头，不猜默认行程",
+        "不从平移画面推断传动方式、控制原理或承载能力",
+        "相机运动不能冒充设备运动；不同时堆多轴"
+      ],
+      "observe_and_rework": [
+        {
+          "observe": "主体移动时主梁或地面保持参照，目标部件始终可见，首尾位移可辨",
+          "failure": "运动被相机抵消、遮挡或太小",
+          "rework": "固定相机，调整可见取景/合规起终点后人工复看"
+        },
+        {
+          "observe": "行程在 rig 范围内；若校验器计算加速则成片显示倍速",
+          "failure": "越界或倍速未标",
+          "rework": "修正行程并重跑校验；补倍速标识，不能编造速度"
+        }
+      ]
+    },
+    "structure": {
+      "question": "哪些部件组成这个结构，它们在什么位置？",
+      "intent_words": [
+        "结构",
+        "组成",
+        "拆解",
+        "structure",
+        "主梁",
+        "支腿"
+      ],
+      "requires": {
+        "facts": "带出处的 confirmed/verified qualitative 结构事实，明确提到选用的各部件",
+        "model_nodes": [
+          "girder",
+          "leg_left",
+          "leg_right"
+        ],
+        "rig": "不需要；拆解是讲解图示，不是设备实际拆装"
+      },
+      "sequence": [
+        {
+          "role": "完整结构建立方位",
+          "kind": "model_orbit",
+          "weight": 4,
+          "params": {
+            "from_deg": -25,
+            "to_deg": -10,
+            "elevation_deg": 15,
+            "distance": 1.5,
+            "highlight": [
+              "girder",
+              "leg_left",
+              "leg_right"
+            ]
+          }
+        },
+        {
+          "role": "只分开有证据的部件",
+          "kind": "exploded",
+          "weight": 7,
+          "params": {
+            "parts": [
+              "girder",
+              "leg_left",
+              "leg_right"
+            ],
+            "spread_m": 4
+          }
+        },
+        {
+          "role": "回看整体关系",
+          "kind": "model_orbit",
+          "weight": 4,
+          "params": {
+            "from_deg": -10,
+            "to_deg": 0,
+            "elevation_deg": 15,
+            "distance": 1.5,
+            "highlight": [
+              "girder",
+              "leg_left",
+              "leg_right"
+            ]
+          }
+        }
+      ],
+      "forbidden": [
+        "节点存在不等于工作原理已证实",
+        "未有受力/材料/连接证据不得讲承重路径、传动、强度结论",
+        "缺部件节点或结构文字证据禁止拆解；spread_m 是图示距离不是工作行程"
+      ],
+      "observe_and_rework": [
+        {
+          "observe": "完整→分开→回到完整，部件可逐一对应，不穿插遮挡；台词只解释证据中的组成",
+          "failure": "拆开后认不回原位或误认真实拆装",
+          "rework": "缩小 spread_m、减少部件并标注结构示意，补完整视图"
+        },
+        {
+          "observe": "highlight/parts 全部在模型中；不凭图示增加工程因果",
+          "failure": "节点错误或台词越过证据",
+          "rework": "改节点引用并删去无支持因果句，缺证据则交人工"
+        }
+      ]
+    }
+  }
+}

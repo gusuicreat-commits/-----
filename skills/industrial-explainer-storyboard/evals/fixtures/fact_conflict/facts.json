@@ -1,0 +1,172 @@
+{
+  "facts": [
+    {
+      "id": "F_rated_load",
+      "name": "额定起重量",
+      "value": 1230,
+      "unit": "t",
+      "status": "verified",
+      "source": {
+        "doc": "示例技术参数表.pdf",
+        "page": 2,
+        "quote": "额定起重量 1230 t"
+      }
+    },
+    {
+      "id": "F_girder_length",
+      "name": "主梁总长",
+      "value": 104,
+      "unit": "m",
+      "status": "verified",
+      "source": {
+        "doc": "示例技术参数表.pdf",
+        "page": 2,
+        "quote": "主梁总长 104 m"
+      }
+    },
+    {
+      "id": "F_overall_height",
+      "name": "整机高度",
+      "value": 51,
+      "unit": "m",
+      "status": "verified",
+      "source": {
+        "doc": "示例技术参数表.pdf",
+        "page": 2,
+        "quote": "整机高度 51 m"
+      }
+    },
+    {
+      "id": "F_span",
+      "name": "跨度",
+      "value": 88,
+      "unit": "m",
+      "status": "verified",
+      "source": {
+        "doc": "示例技术参数表.pdf",
+        "page": 2,
+        "quote": "跨度 88 m"
+      }
+    },
+    {
+      "id": "F_lift_height",
+      "name": "起升高度",
+      "value": 45,
+      "unit": "m",
+      "status": "verified",
+      "source": {
+        "doc": "示例技术参数表.pdf",
+        "page": 2,
+        "quote": "起升高度 45 m"
+      }
+    },
+    {
+      "id": "F_girder_height",
+      "name": "主梁截面高度",
+      "value": 6.5,
+      "unit": "m",
+      "status": "verified",
+      "source": {
+        "doc": "示例技术参数表.pdf",
+        "page": 2,
+        "quote": "主梁截面高度 6.5 m"
+      }
+    },
+    {
+      "id": "F_hoist_speed",
+      "name": "最大起升速度（满载）",
+      "value": 8,
+      "unit": "m/min",
+      "status": "verified",
+      "source": {
+        "doc": "示例技术参数表.pdf",
+        "page": 2,
+        "quote": "起升速度（满载） 0～8 m/min"
+      }
+    },
+    {
+      "id": "F_trolley_speed",
+      "name": "最大小车运行速度",
+      "value": 30,
+      "unit": "m/min",
+      "status": "verified",
+      "source": {
+        "doc": "示例技术参数表.pdf",
+        "page": 2,
+        "quote": "小车运行速度 0～30 m/min"
+      }
+    },
+    {
+      "id": "F_gantry_speed",
+      "name": "最大大车运行速度",
+      "value": 25,
+      "unit": "m/min",
+      "status": "verified",
+      "source": {
+        "doc": "示例技术参数表.pdf",
+        "page": 2,
+        "quote": "大车运行速度 0～25 m/min"
+      }
+    },
+    {
+      "id": "F_wheel_count",
+      "name": "大车车轮总数",
+      "value": 64,
+      "unit": "个",
+      "status": "verified",
+      "source": {
+        "doc": "示例技术参数表.pdf",
+        "page": 2,
+        "quote": "大车车轮总数 64 个"
+      }
+    },
+    {
+      "id": "F_total_mass",
+      "name": "整机自重",
+      "value": 3600,
+      "unit": "t",
+      "status": "verified",
+      "source": {
+        "doc": "示例技术参数表.pdf",
+        "page": 2,
+        "quote": "整机自重 3600 t"
+      }
+    },
+    {
+      "id": "F_weld_inspection",
+      "name": "焊缝超声波检测比例",
+      "value": 100,
+      "unit": "%",
+      "status": "verified",
+      "source": {
+        "doc": "示例技术参数表.pdf",
+        "page": 3,
+        "quote": "主梁对接焊缝须 100% 超声波检测"
+      }
+    },
+    {
+      "id": "F_weld_tolerance",
+      "name": "主梁腹板对接焊缝错边量",
+      "value": 0.5,
+      "unit": "mm",
+      "status": "verified",
+      "source": {
+        "doc": "示例技术参数表.pdf",
+        "page": 3,
+        "quote": "主梁腹板对接焊缝错边量不大于 0.5 mm。"
+      }
+    },
+    {
+      "id": "F_overall_height_alt",
+      "name": "整机高度",
+      "value": 53,
+      "unit": "m",
+      "status": "verified",
+      "source": {
+        "doc": "示例技术参数表.pdf",
+        "page": 4,
+        "quote": "整机高度 53 m"
+      }
+    }
+  ]
+}

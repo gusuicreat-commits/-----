@@ -7,6 +7,9 @@ from typing import Any, Iterator
 from _rules import PARAM_DEFAULTS, expected_source, motion_speedup
 from resolve_text import PLACEHOLDER, find_duplicate_phrases, find_unsourced_numbers, resolve
 
+from claim_rules import check_claims, fact_conflicts
+from accuracy_rules import check_accuracy
+
 EQUIPMENT = re.compile(r"起重机|门机|龙门吊|吊车|主梁|支腿|吊钩|小车|crane|gantry|hook|girder", re.I)
 
 
@@ -44,6 +47,12 @@ def validate(facts_data: dict, shotlist: dict, assets_data: dict | None = None,
         if not isinstance(shotlist["shots"], list):
             raise ValueError("镜头列表格式无效")
         shots = shotlist["shots"]
+
+    with check("宣称与参数一致性"):
+        check_claims(facts_data, shotlist, add)
+
+    with check("准确度与陈述审计"):
+        check_accuracy(facts_data, shotlist, assets_data, rig, add)
 
     total = 0.0
     pending = 0
@@ -94,7 +103,7 @@ def validate(facts_data: dict, shotlist: dict, assets_data: dict | None = None,
                 add("SOURCE_MISMATCH", "block", "镜头类型与画面来源不一致", "按镜头类型设置 model、real、ai 或 graphic", sid)
         with check("运动参数", sid):
             if kind == "motion" and has_rig:
-                params.pop("speedup", None)
+                declared_speedup = params.pop("speedup", None)
                 axis = params.get("axis")
                 if axis not in rig["axes"]:
                     add("MOTION_AXIS_UNAVAILABLE", "block", f"模型未提供运动轴：{axis}", "选择 rig 中已存在的运动轴", sid)
@@ -111,6 +120,10 @@ def validate(facts_data: dict, shotlist: dict, assets_data: dict | None = None,
                     if "error" in motion:
                         add("MOTION_OUT_OF_RANGE", "block", "运动参数无效：" + motion["error"], "将起终点设在行程内，并使用有效时长", sid)
                     else:
+                        if sourced and declared_speedup is not None and (
+                            not isinstance(declared_speedup, (int, float)) or not math.isfinite(declared_speedup)
+                            or declared_speedup < motion["speedup"] - 1e-6):
+                            add("MOTION_SPEEDUP_MISMATCH", "block", "运动超过资料速度，原倍速标注不足", "使用校验计算后的 speedup，不能将加速演示标成真实速度", sid)
                         params["speedup"] = motion["speedup"] if sourced else 1
         with check("素材引用", sid):
             refs = list(shot.get("asset_refs", []))
@@ -170,6 +183,16 @@ def validate(facts_data: dict, shotlist: dict, assets_data: dict | None = None,
 
 
 FIXES: dict[str, tuple[str, str]] = {
+    'QUOTE_MISMATCH': ('facts[].source.quote', '交人工核对原文数值、单位及文字事实，不改写摘录迁就参数'),
+    'QUOTE_ABSENT': ('facts[].source.quote', '补充并核对原文摘录'),
+    'ANALOGY_ROUNDING': ('analogies', '重新运行 compute_analogy 生成全部类比字段，禁止手写比较词'),
+    'UNSUPPORTED_CLAIM': ('claims/narration', '为每句陈述提供有效事实或素材依据，具体陈述不得标为 generic'),
+    'CLAIMS_MISSING': ('claims', '为每句台词列出 text 与 support；交付按 warn 处理'),
+    'MOTION_SPEEDUP_MISMATCH': ('params.speedup', '确认使用校验结果计算的倍速标注，不能冒充真实运动速度'),
+    'EXAGGERATION': ('narration/params.caption/params.title/title', '删除无排名证据的最高级，例如将「国内最大」替换成「起重量 {{F_rated_load}}」；排名证据须 verified、claim_type=ranking 且同句引用'),
+    'ABSOLUTE_CLAIM': ('narration/params.caption/params.title/title', '删除绝对承诺，改用已核验的精度参数并说明适用条件'),
+    'FACT_CONFLICT': ('fact_refs/narration/params/analogies', '交人工核对冲突事实的原文与页码，确认采用哪条；不得自动选值、删事实或改状态'),
+    'UNIT_SUSPECT': ('facts[].unit', '交人工核对名称与原文单位，确认数值和单位的对应关系；不得自动换单位'),
     'UNKNOWN_FACT': ('fact_refs/narration/params', '删除不存在的参数引用，并在 narration、fact_refs、params.facts、params.fact 及相关类比中改用同一已确认参数 ID'),
     'REJECTED_FACT': ('fact_refs/narration/params', '移除被否决参数的台词、画面字段及关联类比；需要恢复时先让人工核实原始文档'),
     'UNVERIFIED_FACT': ('fact_refs/narration/params', '暂时移除该参数的所有引用，将缺失内容列入人工确认项；不得自行改写 facts.status'),
@@ -272,9 +295,14 @@ def enrich_report(result: dict, facts_data: dict, shotlist: dict, has_project: b
         {'fact': f.get('id'), 'status': f.get('status'), 'message': '该参数不可引用，请人工核实原文；本报告不修改参数状态'}
         for f in facts_data.get('facts', []) if isinstance(f, dict) and f.get('status') not in {'verified', 'confirmed'}
     ] if isinstance(facts_data, dict) and isinstance(facts_data.get('facts'), list) else []
+    if isinstance(facts_data, dict) and isinstance(facts_data.get('facts'), list):
+        for fid in sorted(fact_conflicts(facts_data['facts'])):
+            result['manual_review'].append({'fact': fid, 'status': 'conflict', 'message': '已核验事实仍有冲突，交人工核对文档页码并确认采用哪条；本技能不得自行选择'})
+    result['delivery_warnings'] = [{**i, 'severity': 'warn'} for i in result['issues'] if i['code'] == 'CLAIMS_MISSING']
     result['counts'] = {level: sum(i['severity'] == level for i in result['issues']) for level in ('block', 'warn', 'info')}
     result['passed'] = not result['counts']['block'] and not any(i['code'] == 'CHECK_ERROR' for i in result['issues'])
-    result['summary'] = f"真实性校验：{result['counts']['block']} 个阻断、{result['counts']['warn']} 个警告、{result['counts']['info']} 个提示；缺少输入的检查见 skipped"
+    result['delivery_passed'] = result['passed'] and not result['delivery_warnings']
+    result['summary'] = f"真实性校验：{result['counts']['block']} 个阻断、{result['counts']['warn']} 个警告、{result['counts']['info']} 个提示；技能交付另有 {len(result['delivery_warnings'])} 个陈述缺失警告；缺少输入的检查见 skipped"
     return result
 
 
@@ -310,6 +338,7 @@ def main(argv: list[str] | None = None) -> int:
         if len(ids) != len(set(ids)):
             report['input_errors'].append({'field': 'shots[].id', 'message': '镜头 id 重复', 'fix': '为每个镜头指定唯一 id，并保留已编辑镜头 id'})
         report['passed'] = report['passed'] and not report['input_errors']
+        report['delivery_passed'] = report['delivery_passed'] and not report['input_errors']
         write_json(args.out, report)
         if args.shotlist_out:
             write_json(args.shotlist_out, shotlist)

@@ -73,8 +73,21 @@ def build_timeline(pid: str) -> dict:
         duration = float(metadata["duration_s"])
         if not math.isfinite(duration) or duration <= 0:
             raise ValueError("配音时长无效")
-        end = position + max(float(shot["duration_s"]), duration + .8)
+        if project.get("render_mode") == "scale_film":
+            from .scale_film import assert_current
+            assert_current(pid)
+            if duration + .8 > float(shot["duration_s"]):
+                raise ValueError(f"镜头 {sid} 实际配音超出尺度短片预算，请缩短台词或明确增加目标时长后重新规划，不裁音")
+            end = position + float(shot["duration_s"])
+        elif project.get("production_engine"):
+            if duration + .8 > float(shot["duration_s"]):
+                raise ValueError(f"镜头 {sid} 实际配音超出已预览时长，请缩短台词或调整时长后重新预览")
+            end = position + float(shot["duration_s"])
+        else:
+            end = position + max(float(shot["duration_s"]), duration + .8)
         narration = resolve(shot["narration"], facts, analogies)
+        if project.get("render_mode") == "scale_film" and metadata.get("spoken_text") != narration:
+            raise ValueError(f"镜头 {sid} 配音与当前台词不匹配，请从tts重跑")
         params = deepcopy(shot.get("params", {}))
         overlays: list[str] = []
         if shot["kind"] == "analogy" and params.get("analogy") in analogies:
@@ -115,3 +128,39 @@ def build_timeline(pid: str) -> dict:
     subprocess.run(args, check=True, capture_output=True, timeout=600)
     storage.write_json(pid, "timeline.json", timeline)
     return timeline
+
+
+def build_preview(pid: str) -> dict:
+    """Silent storyboard preview; never reads TTS files or invokes ffmpeg."""
+    shotlist = storage.read_json(pid, "shotlist.json", {})
+    if not shotlist.get("shots"):
+        raise ValueError("尚无可预览的分镜")
+    facts = {f["id"]: f for f in storage.read_json(pid, "facts.json", {"facts": []})["facts"]}
+    analogies = resolve_analogies(shotlist, facts)
+    project = storage.read_json(pid, "project.json")
+    model = deepcopy(project.get("model") or {})
+    rig = storage.read_json(pid, "model/rig.json", {})
+    if model:
+        model.update(glb=f"/files/{pid}/{model['glb']}", rig=rig)
+    assets = {a["id"]: {**a, "url": f"/files/{pid}/{a['file']}"} for a in storage.read_json(pid, "assets.json", {"assets": []})["assets"]}
+    result = {"fps": shotlist.get("fps", 30), "width": shotlist.get("width", 1920), "height": shotlist.get("height", 1080),
+              "shots": [], "captions": [], "facts": facts, "analogies": analogies, "assets": assets,
+              "model": model or None, "render_mode": "standard", "audio": None, "music": None, "preview": True}
+    position = 0.0
+    for shot in shotlist["shots"]:
+        end = position + float(shot["duration_s"])
+        if not math.isfinite(end) or end <= position:
+            raise ValueError("镜头时长必须为有限正数")
+        params = deepcopy(shot.get("params", {}))
+        narration = resolve(shot["narration"], facts, analogies)
+        ids = list(shot.get("fact_refs", []))
+        result["shots"].append({"id": shot["id"], "kind": shot["kind"], "source": shot["source"],
+                                "badge": _badge(shot, model, assets), "start": position, "end": end,
+                                "params": params, "narration": narration,
+                                "text_overlays": [{"text": format_value(facts[fid]["value"], facts[fid]["unit"]), "fact": fid}
+                                                  for fid in ids if fid in facts]})
+        if narration:
+            result["captions"].append({"start": position, "end": end, "text": narration})
+        position = end
+    result["duration_s"] = position
+    return result

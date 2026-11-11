@@ -1,0 +1,33 @@
+import {test,expect} from '@playwright/test';
+
+test('尺度短片设置原子保存、刷新保留并限制不兼容讲解方式',async({page,request})=>{
+ const created=await request.post('/api/projects',{data:{name:'尺度短片入口验收',brief:'讲清主梁到底多长'}});
+ expect(created.ok()).toBeTruthy();const project=await created.json();
+ await page.goto('/');await page.locator('#project-select').selectOption(project.id);
+ await page.getByLabel('画面风格',{exact:true}).selectOption('scale_film');
+ await expect(page.locator('#render-mode')).toHaveValue('scale_film');
+ await expect(page.locator('#rerun-stage')).toHaveValue('plan');
+ let saved=await (await request.get(`/api/projects/${project.id}`)).json();
+ expect(saved.render_mode).toBe('scale_film');expect(saved.director_recipe).toBe('scale');expect(saved.target_s).toBe(15);
+ await expect(page.locator('#preview')).toContainText('从一个数字，到看得见的长度');
+ await expect(page.locator('#player-frame')).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'打开成片 ↗'})).toBeDisabled();
+ await page.reload();await page.getByRole('button',{name:'讲解方式',exact:true}).click();
+ await expect(page.locator('#director-recipe option[value=motion]')).toBeDisabled();
+ await expect(page.locator('#director-recipe option[value=structure]')).toBeDisabled();
+ await expect(page.getByLabel('目标时长（秒）')).toHaveAttribute('min','15');
+ await expect(page.getByLabel('目标时长（秒）')).toHaveAttribute('max','30');
+ await page.getByLabel('目标时长（秒）').fill('20');
+ await page.getByRole('button',{name:'保存讲解方式',exact:true}).click();
+ await expect(page.locator('#director-settings')).not.toBeVisible();
+ saved=await (await request.get(`/api/projects/${project.id}`)).json();expect(saved.target_s).toBe(20);
+ expect((await request.patch(`/api/projects/${project.id}/settings`,{data:{target_s:45}})).status()).toBe(422);
+ expect((await (await request.get(`/api/projects/${project.id}`)).json()).target_s).toBe(20);
+ await page.screenshot({path:'test-results/T25-scale-film/settings.png'});
+ await page.getByLabel('画面风格',{exact:true}).selectOption('standard');
+ await expect(page.locator('#render-mode')).toHaveValue('standard');
+ await expect(page.locator('#rerun-stage')).toHaveValue('plan');
+ await page.getByRole('button',{name:'讲解方式',exact:true}).click();
+ await expect(page.locator('#director-recipe option[value=motion]')).not.toBeDisabled();
+ await expect(page.getByLabel('目标时长（秒）')).toHaveAttribute('max','120');
+});

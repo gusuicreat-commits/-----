@@ -1,0 +1,19 @@
+{
+  "device": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+  "face": {
+    "sunCount": 19485,
+    "shadeCount": 8208,
+    "sun": 0.41252475394341387,
+    "shade": 0.2845381458548326,
+    "ratio": 1.4498047448227847,
+    "linearSun": 0.1778671389768804,
+    "linearShade": 0.072646491371536,
+    "linearRatio": 2.4483926975525128
+  },
+  "ground": {
+    "count": 127,
+    "shadow": 0.21243552879419506,
+    "lit": 0.5096229180176004,
+    "ratio": 0.4168484604667217
+  }
+}

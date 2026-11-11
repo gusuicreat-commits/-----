@@ -177,3 +177,17 @@ export function frameParallel(ctx,bounds,{angle=0,elevation=35,width,height,cx=.
  ctx.camera.projectionMatrix.makeOrthographic(-halfWidth,halfWidth,halfHeight,-halfHeight,ctx.camera.near,ctx.camera.far);
  ctx.camera.projectionMatrixInverse.copy(ctx.camera.projectionMatrix).invert();
 }
+
+// 局部短引线：同屏最多两项，名称留在部件包围盒外侧。
+export function editorialLabels(ctx,ids){
+ const entries=ids.slice(0,2).map(id=>{const node=ctx.model.getObjectByName(id);if(!node)return null;
+  const bounds=partBounds(node),point=projectPoint(ctx,bounds.getCenter(new THREE.Vector3())),rect=projectBounds(ctx,bounds);
+  return {id,point,rect};
+ }).filter(Boolean).sort((a,b)=>a.point.y-b.point.y);
+ let previous=230;
+ ctx.labels.innerHTML=entries.map(({id,point,rect})=>{
+  const left=point.x<960,x=left?Math.max(220,rect.x-32):Math.min(1700,rect.x+rect.width+32);
+  const y=Math.max(previous,Math.min(800,point.y-45));previous=y+58;
+  return `<g class="editorial-label" data-part="${esc(id)}"><path d="M ${point.x} ${point.y} L ${x} ${y+7}"/><circle cx="${point.x}" cy="${point.y}" r="3"/><text x="${x}" y="${y}" text-anchor="${left?'end':'start'}">${names[id]||esc(id)}</text></g>`;
+ }).join('');
+}

@@ -1,0 +1,245 @@
+{
+  "name": "english_facts",
+  "facts": {
+    "facts": [
+      {
+        "id": "F_rated_load",
+        "name": "Rated lifting capacity",
+        "value": 450,
+        "unit": "t",
+        "status": "verified",
+        "source": {
+          "doc": "参数表.pdf",
+          "page": 1,
+          "quote": "Rated lifting capacity 450 t"
+        }
+      },
+      {
+        "id": "F_span",
+        "name": "Span",
+        "value": 28.5,
+        "unit": "m",
+        "status": "verified",
+        "source": {
+          "doc": "参数表.pdf",
+          "page": 2,
+          "quote": "Span 28.5 m"
+        }
+      },
+      {
+        "id": "F_hoist_speed",
+        "name": "Hoisting speed",
+        "value": 6,
+        "unit": "m/min",
+        "status": "verified",
+        "source": {
+          "doc": "参数表.pdf",
+          "page": 3,
+          "quote": "Hoisting speed 6 m/min"
+        }
+      },
+      {
+        "id": "F_structure",
+        "name": "结构形式",
+        "type": "qualitative",
+        "value": "采用箱形主梁",
+        "unit": "",
+        "status": "verified",
+        "source": {
+          "doc": "合成测试说明.txt",
+          "page": 1,
+          "quote": "结构形式：采用箱形主梁"
+        }
+      }
+    ]
+  },
+  "assets": {
+    "assets": [
+      {
+        "id": "IMG_test",
+        "kind": "image",
+        "file": "assets/test.jpg",
+        "provenance": "reference",
+        "title": "船体分段吊装",
+        "tags": [],
+        "credit": "合成测试素材"
+      }
+    ]
+  },
+  "project": {
+    "model": {
+      "kind": "parametric",
+      "glb": "model/crane.glb"
+    }
+  },
+  "rig": {
+    "axes": {
+      "hoist": {
+        "node": "hoist_hook",
+        "axis": "y",
+        "range_m": [
+          2,
+          40
+        ],
+        "speed_fact": "F_hoist_speed"
+      }
+    }
+  },
+  "shotlist": {
+    "version": 1,
+    "title": "资料约束的设备解说",
+    "fps": 30,
+    "width": 1920,
+    "height": 1080,
+    "shots": [
+      {
+        "id": "S1",
+        "kind": "title",
+        "source": "model",
+        "duration_s": 9,
+        "narration": "读懂资料里的起重量。",
+        "fact_refs": [],
+        "analogy_refs": [],
+        "asset_refs": [],
+        "params": {
+          "title": "",
+          "subtitle": ""
+        },
+        "review": {
+          "status": "pending",
+          "note": ""
+        },
+        "claims": [
+          {
+            "text": "读懂资料里的起重量。",
+            "support": "generic"
+          }
+        ]
+      },
+      {
+        "id": "S2",
+        "kind": "data_card",
+        "source": "model",
+        "duration_s": 9,
+        "narration": "额定起重量{{F_rated_load}}。跨度{{F_span}}。",
+        "fact_refs": [
+          "F_rated_load",
+          "F_span"
+        ],
+        "analogy_refs": [],
+        "asset_refs": [],
+        "params": {
+          "facts": [
+            "F_rated_load",
+            "F_span"
+          ]
+        },
+        "review": {
+          "status": "pending",
+          "note": ""
+        },
+        "claims": [
+          {
+            "text": "额定起重量{{F_rated_load}}",
+            "support": "F_rated_load"
+          },
+          {
+            "text": "跨度{{F_span}}",
+            "support": "F_span"
+          }
+        ]
+      },
+      {
+        "id": "S3",
+        "kind": "analogy",
+        "source": "model",
+        "duration_s": 9,
+        "narration": "{{A_load}}。",
+        "fact_refs": [],
+        "analogy_refs": [
+          "A_load"
+        ],
+        "asset_refs": [],
+        "params": {
+          "analogy": "A_load"
+        },
+        "review": {
+          "status": "pending",
+          "note": ""
+        },
+        "claims": [
+          {
+            "text": "{{A_load}}",
+            "support": "F_rated_load"
+          }
+        ]
+      },
+      {
+        "id": "S4",
+        "kind": "motion",
+        "source": "model",
+        "duration_s": 9,
+        "narration": "起升速度{{F_hoist_speed}}。",
+        "fact_refs": [
+          "F_hoist_speed"
+        ],
+        "analogy_refs": [],
+        "asset_refs": [],
+        "params": {
+          "axis": "hoist",
+          "from_m": 2,
+          "to_m": 2.5
+        },
+        "review": {
+          "status": "pending",
+          "note": ""
+        },
+        "claims": [
+          {
+            "text": "起升速度{{F_hoist_speed}}",
+            "support": "F_hoist_speed"
+          }
+        ]
+      },
+      {
+        "id": "S5",
+        "kind": "outro",
+        "source": "model",
+        "duration_s": 9,
+        "narration": "把资料看明白。",
+        "fact_refs": [],
+        "analogy_refs": [],
+        "asset_refs": [],
+        "params": {
+          "title": "",
+          "subtitle": ""
+        },
+        "review": {
+          "status": "pending",
+          "note": ""
+        },
+        "claims": [
+          {
+            "text": "把资料看明白。",
+            "support": "generic"
+          }
+        ]
+      }
+    ],
+    "analogies": [
+      {
+        "id": "A_load",
+        "fact": "F_rated_load",
+        "ref": "car",
+        "axis": "mass",
+        "ratio": 300.0,
+        "text": "相当于300辆小轿车的重量",
+        "ref_size_m": null,
+        "ref_size": 1.5,
+        "ref_unit": "t",
+        "basis": "家用轿车约1.5吨",
+        "formula": "450 ÷ 1.5 ≈ 300.00"
+      }
+    ]
+  }
+}

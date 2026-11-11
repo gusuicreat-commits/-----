@@ -1,0 +1,131 @@
+(node:9321) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+
+Running 12 tests using 1 worker
+
+(node:9322) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:9322) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:9322) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 tests/player.spec.ts:16:1 › 角标、字幕、出处与镜头事件符合时间线 (623ms)
+  ✓   2 tests/player.spec.ts:18:1 › 预览可播放、暂停并拖动时间轴 (989ms)
+  ✘   3 tests/player.spec.ts:114:1 › 开场双分辨率文字与模型投影不相交 (462ms)
+(node:9349) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:9349) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:9349) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘   4 tests/player.spec.ts:495:1 › 爆炸镜头实际标签无引线交叉且避开标题字幕 (561ms)
+(node:9362) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:9362) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:9362) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   5 tests/player.spec.ts:910:2 › standard模式2项参数卡完整容纳项目且位于字幕上方 (924ms)
+  ✓   6 tests/player.spec.ts:910:2 › standard模式3项参数卡完整容纳项目且位于字幕上方 (944ms)
+  ✘   7 tests/player.spec.ts:910:2 › standard模式4项参数卡完整容纳项目且位于字幕上方 (594ms)
+(node:9384) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:9384) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:9384) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   8 tests/player.spec.ts:910:2 › photoreal模式2项参数卡完整容纳项目且位于字幕上方 (770ms)
+  ✓   9 tests/player.spec.ts:910:2 › photoreal模式3项参数卡完整容纳项目且位于字幕上方 (728ms)
+  ✘  10 tests/player.spec.ts:910:2 › photoreal模式4项参数卡完整容纳项目且位于字幕上方 (380ms)
+(node:9405) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:9405) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:9405) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  11 tests/player.spec.ts:967:1 › 参数卡与片尾背景切换恢复亮度且片尾保留标题 (447ms)
+  ✓  12 tests/player.spec.ts:982:1 › 写实片尾副标题和来源在浅色天空上的像素对比度至少4.5 (908ms)
+
+
+  1) tests/player.spec.ts:114:1 › 开场双分辨率文字与模型投影不相交 ─────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32mfalse[39m
+    Received: [31mtrue[39m
+
+      120 |   const p=projectedBounds(ctx,new ctx.THREE.Box3().setFromObject(ctx.model.getObjectByName('crane'))),stage=await page.locator('#stage').boundingBox(),text=await page.locator('.opening').boundingBox();
+      121 |   const model={x:stage!.x+p.left*stage!.width,y:stage!.y+p.top*stage!.height,width:(p.right-p.left)*stage!.width,height:(p.bottom-p.top)*stage!.height};
+    > 122 |   expect(rectanglesOverlap(model,text!)).toBe(false);
+          |                                          ^
+      123 |   expect(model.width/stage!.width).toBeGreaterThanOrEqual(.45);expect(model.width/stage!.width).toBeLessThanOrEqual(.75);
+      124 |   await expect(page.locator('.opening')).toHaveCSS('background-image','none');
+      125 |  }
+        at /Users/mac/Desktop/AI入企黑客松/科普视频智能体/web/tests/player.spec.ts:122:42
+
+    Error Context: test-results/T23-aster-layout/player-开场双分辨率文字与模型投影不相交/error-context.md
+
+  2) tests/player.spec.ts:495:1 › 爆炸镜头实际标签无引线交叉且避开标题字幕 ─────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoHaveLength[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected length: [32m5[39m
+    Received length: [31m0[39m
+    Received array:  [31m[][39m
+
+      501 |    await page.evaluate(t=>window.__player.seek(t),t);
+      502 |    const labels=explodedLabels(await page.locator('#labels').innerHTML());
+    > 503 |    expect(labels).toHaveLength(5);assertLeadersSeparate(labels);
+          |                   ^
+      504 |    await expect(page.locator('#labels [data-part="cab"] text')).toHaveText('司机室');
+      505 |    const stage=(await page.locator('#stage').boundingBox())!,scale=stage.width/1920,measured={};
+      506 |    for(const selector of ['#badge','.section-title','#film-title','#caption','footer']){
+        at /Users/mac/Desktop/AI入企黑客松/科普视频智能体/web/tests/player.spec.ts:503:19
+
+    Error Context: test-results/T23-aster-layout/player-爆炸镜头实际标签无引线交叉且避开标题字幕/error-context.md
+
+  3) tests/player.spec.ts:910:2 › standard模式4项参数卡完整容纳项目且位于字幕上方 ─────────────────────────────────────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeCloseTo[2m([22m[32mexpected[39m[2m, [22mprecision[2m)[22m
+
+    Expected: [32m339.84375[39m
+    Received: [31m199[39m
+
+    Expected precision:    1
+    Expected difference: < [32m0.05[39m
+    Received difference:   [31m140.84375[39m
+
+      935 |     if(count===4){
+      936 |      const boxes=await Promise.all((await page.locator('.data-card').all()).map(el=>el.boundingBox()));
+    > 937 |      expect(boxes[0]!.y).toBeCloseTo(boxes[1]!.y,1);expect(boxes[2]!.y).toBeCloseTo(boxes[3]!.y,1);
+          |                          ^
+      938 |      expect(boxes[2]!.y).toBeGreaterThan(boxes[0]!.y);
+      939 |     }
+      940 |     if(mode==='photoreal')await expect(page.locator('#bg-frame')).toHaveCSS('filter','brightness(0.78)');
+        at /Users/mac/Desktop/AI入企黑客松/科普视频智能体/web/tests/player.spec.ts:937:26
+
+    Error Context: test-results/T23-aster-layout/player-standard模式4项参数卡完整容纳项目且位于字幕上方/error-context.md
+
+  4) tests/player.spec.ts:910:2 › photoreal模式4项参数卡完整容纳项目且位于字幕上方 ────────────────────────────────────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeCloseTo[2m([22m[32mexpected[39m[2m, [22mprecision[2m)[22m
+
+    Expected: [32m339.84375[39m
+    Received: [31m199[39m
+
+    Expected precision:    1
+    Expected difference: < [32m0.05[39m
+    Received difference:   [31m140.84375[39m
+
+      935 |     if(count===4){
+      936 |      const boxes=await Promise.all((await page.locator('.data-card').all()).map(el=>el.boundingBox()));
+    > 937 |      expect(boxes[0]!.y).toBeCloseTo(boxes[1]!.y,1);expect(boxes[2]!.y).toBeCloseTo(boxes[3]!.y,1);
+          |                          ^
+      938 |      expect(boxes[2]!.y).toBeGreaterThan(boxes[0]!.y);
+      939 |     }
+      940 |     if(mode==='photoreal')await expect(page.locator('#bg-frame')).toHaveCSS('filter','brightness(0.78)');
+        at /Users/mac/Desktop/AI入企黑客松/科普视频智能体/web/tests/player.spec.ts:937:26
+
+    Error Context: test-results/T23-aster-layout/player-photoreal模式4项参数卡完整容纳项目且位于字幕上方/error-context.md
+
+  4 failed
+    tests/player.spec.ts:114:1 › 开场双分辨率文字与模型投影不相交 ──────────────────────────────────────────────────
+    tests/player.spec.ts:495:1 › 爆炸镜头实际标签无引线交叉且避开标题字幕 ──────────────────────────────────────────────
+    tests/player.spec.ts:910:2 › standard模式4项参数卡完整容纳项目且位于字幕上方 ──────────────────────────────────────
+    tests/player.spec.ts:910:2 › photoreal模式4项参数卡完整容纳项目且位于字幕上方 ─────────────────────────────────────
+  8 passed (13.4s)

@@ -40,6 +40,7 @@ def schema_errors(value: Any, schema: dict, field: str = "shotlist") -> list[dic
         errors.append({"field": field, "message": message, "fix": f"修改 {field}：{message}"})
 
     types = {
+        "boolean": isinstance(value, bool),
         "object": isinstance(value, dict), "array": isinstance(value, list),
         "string": isinstance(value, str), "null": value is None,
         "number": isinstance(value, (float, int)) and not isinstance(value, bool) and math.isfinite(value),

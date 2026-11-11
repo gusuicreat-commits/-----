@@ -1,0 +1,17 @@
+{
+  "assets": [
+    {
+      "id": "IMG_ODENSE",
+      "kind": "image",
+      "file": "assets/reference.jpg",
+      "provenance": "reference",
+      "title": "参考船厂全景",
+      "tags": [
+        "门式起重机",
+        "造船厂"
+      ],
+      "credit": "示例项目素材登记，评测只使用元数据，不包含图片文件",
+      "duration_s": null
+    }
+  ]
+}

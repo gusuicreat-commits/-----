@@ -1,10 +1,11 @@
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from app import llm, storage
 from app.events import tool_call
 from app.ingest import pdf
+from app.agent.accuracy_rules import quote_matches
 
 FACT_SCHEMA = {
     "type": "object", "additionalProperties": False, "required": ["facts"],
@@ -12,11 +13,15 @@ FACT_SCHEMA = {
         "type": "object", "additionalProperties": False,
         "required": ["id", "name", "value", "unit", "page", "quote"],
         "properties": {"id": {"type": "string"}, "name": {"type": "string"},
-                       "value": {"type": "number"}, "unit": {"type": "string"},
-                       "page": {"type": "integer"}, "quote": {"type": "string"}}
+                       "value": {"type": ["number", "string"]},
+                       "type": {"type": "string", "enum": ["quantitative", "qualitative"]}, "unit": {"type": "string"},
+                       "page": {"type": "integer"}, "quote": {"type": "string"},
+                       "claim_type": {"type": "string", "enum": ["ranking"],
+                                      "description": "仅有明确排名或首台认证依据的数值序位参数可标为 ranking；普通参数省略"}}
     }}}
 }
-SYSTEM = """你是起重机技术文档参数抽取员。只抽取文档中明确写出的数值参数。
+SYSTEM = """你是起重机技术文档参数抽取员。只抽取文档中明确写出的数值参数及用途、结构文字事实。
+文字事实标 type=qualitative，value 逐字引用文字，unit 为空字符串；数值参数不必标 type。
 quote 必须从原文逐字复制，包含该数值，不超过40字；page 为所在页码。
 表格行的 quote 写成『项目名 数值 单位』，例如『额定起重量 1230 t』（原文中项目名与数值之间的换行/空格可省略，核验时会去除空白）。
 id 优先使用以下规范 id 与单位：
@@ -31,15 +36,27 @@ class ExtractedFact(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     id: str = Field(pattern=r"^F_[a-z][a-z_]*$")
     name: str
-    value: float = Field(allow_inf_nan=False)
+    value: Annotated[float, Field(allow_inf_nan=False)] | str
+    type: Literal["quantitative", "qualitative"] | None = None
     unit: str
     page: int
     quote: str
+    claim_type: Literal["ranking"] | None = None
+
+
+    @model_validator(mode="after")
+    def check_value_type(self) -> "ExtractedFact":
+        if self.type == "qualitative":
+            if not isinstance(self.value, str) or not self.value.strip() or self.unit:
+                raise ValueError("文字事实必须包含非空文字及空单位")
+        elif isinstance(self.value, str):
+            raise ValueError("数值参数不能使用文字值")
+        return self
 
 
 class FactPatch(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    value: float | None = Field(default=None, allow_inf_nan=False)
+    value: Annotated[float, Field(allow_inf_nan=False)] | str | None = None
     unit: str | None = None
     status: Literal["verified", "needs_review", "confirmed", "rejected"] | None = None
 
@@ -66,11 +83,13 @@ def extract_facts(pid: str, run: str, pdf_path: Path) -> dict:
             if item.id in facts:
                 continue
             quote = pdf.normalize(item.quote)
-            number = str(int(item.value)) if item.value.is_integer() else str(item.value)
-            verified = bool(quote) and quote in page_text.get(item.page, "") and number in quote
+            verified = bool(quote) and quote in page_text.get(item.page, "") and quote_matches({
+                "value": item.value, "unit": item.unit, "type": item.type, "source": {"quote": item.quote}})
             facts[item.id] = {"id": item.id, "name": item.name, "value": item.value, "unit": item.unit,
                               "source": {"doc": pdf_path.name, "page": item.page, "quote": item.quote},
-                              "status": "verified" if verified else "needs_review"}
+                              "status": "verified" if verified else "needs_review",
+                              **({"claim_type": item.claim_type} if item.claim_type is not None else {}),
+                              **({"type": item.type} if item.type is not None else {})}
         count = sum(item["status"] == "verified" for item in facts.values())
         with storage.LOCK:
             existing = storage.read_json(pid, "facts.json", {"facts": []})
@@ -99,6 +118,12 @@ def update_fact(pid: str, fid: str, patch: dict) -> dict:
         result = storage.read_json(pid, "facts.json", {"facts": []})
         for item in result["facts"]:
             if item["id"] == fid:
+                value = updates.get("value", item["value"])
+                if item.get("type") == "qualitative":
+                    if not isinstance(value, str) or not value.strip() or updates.get("unit", item.get("unit", "")):
+                        raise ValueError("文字事实必须包含非空文字及空单位")
+                elif isinstance(value, str):
+                    raise ValueError("数值参数不能改为文字")
                 item.update(updates)
                 storage.write_json(pid, "facts.json", result)
                 return item

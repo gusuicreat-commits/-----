@@ -1,0 +1,138 @@
+{
+  "task": "plan",
+  "note": "T21c 人工离线回放：沿用 plan_91517b2755298ded.json 响应，仅按新 schema、提示和准确度问题重建输入键；未调用真实模型。",
+  "system_head": "你是工业科普短视频编导，为超大起重机做 45±10 秒科普片，6–9 个镜头。\n叙事：开场钩子 → 有多大（类比）→ 结构 → 怎么动 → 焊缝有多准 → 收尾。\n整片镜头安排要求：\n- 如素材列表非空，至少安排 1 个 real_media 镜头，params.asset 必须取自素材列表的 id，并列入 asset_refs。\n- 必须安排 1 个 data_card 镜头，params.facts 列出 2–4 个最关键参数，只取给定的可引用参数。\n- 如有焊缝精度相关参数，必须安排 1 个 weld_macro 镜头讲焊缝精度，params.fact 引用该参数。\n- analogy ",
+  "user_head": "{\"assets\": [{\"id\": \"IMG_01\", \"kind\": \"image\", \"provenance\": \"reference\", \"tags\": [\"参考实拍\"], \"title\": \"船厂全景\"}, {\"id\": \"IMG_02\", \"kind\": \"image\", \"provenance\": \"reference\", \"tags\": [\"参考实拍\"], \"title\": \"装配现场\"}, {\"id\": \"IMG_03\", \"kind\": \"image\", \"provenance\": \"reference\", \"tags\": [\"参考实拍\"], \"title\": \"焊缝近景\"}, {\"id\": \"IMG_04\", \"kind\": \"image\", \"provenance\": \"reference\", \"tags\": [\"参考实拍\"], \"title\": \"轨道视角\"}, {\"id\": \"IMG_05\", \"kind\": \"image\", \"provenance\": \"reference\", \"tags\": [\"参考实拍\"], \"title\": \"夜间船厂\"}], \"brief\": \"口语化解释超大门机的尺寸、结构、运动与焊缝精度，亲切且有出处。\", \"facts\": [{\"id\": \"F_rated_load\", \"name\": \"额定起重量\", \"page\": 2, \"source\": {\"doc\": \"示例技术参数表.pdf\", \"page\": 2, \"quote\": \"额定起重量 1230 t\"}, \"status\": \"verified\", \"unit\": \"t\", \"value\": 1230.0}, {\"id\": \"F_girder_length\", \"name\": \"主梁总长\", \"page\": 2, \"source\": {\"doc\": \"示例",
+  "response": {
+    "title": "大块头，也有细功夫",
+    "shots": [
+      {
+        "id": "临时编号",
+        "kind": "title",
+        "source": "graphic",
+        "duration_s": 4,
+        "narration": "这个大块头，究竟怎样把重物稳稳托起？",
+        "fact_refs": [],
+        "asset_refs": [],
+        "analogy_requests": [],
+        "params": {
+          "title": "大块头，也有细功夫"
+        }
+      },
+      {
+        "id": "临时编号",
+        "kind": "analogy",
+        "source": "graphic",
+        "duration_s": 8,
+        "narration": "主梁长{{F_girder_length}}，{{A_girder_length_football_field}}。",
+        "fact_refs": [
+          "F_girder_length"
+        ],
+        "asset_refs": [],
+        "analogy_requests": [
+          {
+            "fact": "F_girder_length",
+            "ref": "football_field",
+            "axis": "length"
+          }
+        ],
+        "params": {}
+      },
+      {
+        "id": "临时编号",
+        "kind": "model_orbit",
+        "source": "graphic",
+        "duration_s": 6,
+        "narration": "主梁和支腿搭起骨架，小车能走三十米。",
+        "fact_refs": [],
+        "asset_refs": [],
+        "analogy_requests": [],
+        "params": {
+          "from_deg": -30,
+          "caption": "应被过滤"
+        }
+      },
+      {
+        "id": "临时编号",
+        "kind": "motion",
+        "source": "graphic",
+        "duration_s": 6,
+        "narration": "资料列示小车运行速度{{F_trolley_speed}}，沿主梁平稳移动。",
+        "fact_refs": [
+          "F_trolley_speed"
+        ],
+        "asset_refs": [],
+        "analogy_requests": [],
+        "params": {
+          "axis": "trolley",
+          "from_m": -30,
+          "to_m": 30
+        }
+      },
+      {
+        "id": "临时编号",
+        "kind": "weld_macro",
+        "source": "graphic",
+        "duration_s": 8,
+        "narration": "焊缝错边量不大于{{F_weld_tolerance}}，{{A_weld_tolerance_hair}}。",
+        "fact_refs": [
+          "F_weld_tolerance"
+        ],
+        "asset_refs": [],
+        "analogy_requests": [
+          {
+            "fact": "F_weld_tolerance",
+            "ref": "hair",
+            "axis": "thickness"
+          }
+        ],
+        "params": {}
+      },
+      {
+        "id": "临时编号",
+        "kind": "real_media",
+        "source": "graphic",
+        "duration_s": 5,
+        "narration": "像这样的造船门机，服务于船体分段吊装。",
+        "fact_refs": [],
+        "asset_refs": [
+          "IMG_01"
+        ],
+        "analogy_requests": [],
+        "params": {
+          "asset": "IMG_01",
+          "caption": "参考实拍 · 非本机"
+        }
+      },
+      {
+        "id": "临时编号",
+        "kind": "ai_broll",
+        "source": "graphic",
+        "duration_s": 3,
+        "narration": "晨光中，船厂渐渐苏醒。",
+        "fact_refs": [],
+        "asset_refs": [],
+        "analogy_requests": [],
+        "params": {
+          "recipe": "sunrise_port",
+          "palette": "warm",
+          "prompt": "金色晨光照亮海面，水波轻轻流动"
+        }
+      },
+      {
+        "id": "临时编号",
+        "kind": "outro",
+        "source": "graphic",
+        "duration_s": 5,
+        "narration": "托起重物，靠的不只是大块头，还有细功夫。",
+        "fact_refs": [],
+        "asset_refs": [],
+        "analogy_requests": [],
+        "params": {
+          "title": "大与精，缺一不可"
+        }
+      }
+    ]
+  },
+  "migrated_from": "plan_fde18eb27e7401af.json"
+}

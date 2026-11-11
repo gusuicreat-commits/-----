@@ -1,0 +1,104 @@
+{
+  "evals": [
+    {
+      "name": "trigger_01",
+      "prompt": "帮我给这台造船门机做个30秒的展会视频脚本。",
+      "expected": true
+    },
+    {
+      "name": "trigger_02",
+      "prompt": "这份分镜里的数字靠谱吗？请核查出处。",
+      "expected": true
+    },
+    {
+      "name": "trigger_03",
+      "prompt": "把起重机的科普视频台词改得让小学生听懂。",
+      "expected": true
+    },
+    {
+      "name": "trigger_04",
+      "prompt": "请根据参数表给桥机写一份45秒宣传片分镜。",
+      "expected": true
+    },
+    {
+      "name": "trigger_05",
+      "prompt": "帮我审查这个工业装备视频有没有冒认参考实拍。",
+      "expected": true
+    },
+    {
+      "name": "trigger_06",
+      "prompt": "为投标视频设计镜头，台词要克制并带参数出处。",
+      "expected": true
+    },
+    {
+      "name": "trigger_07",
+      "prompt": "把已有门机分镜压缩到30秒，保留人工台词。",
+      "expected": true
+    },
+    {
+      "name": "trigger_08",
+      "prompt": "这个设备视频中的长度类比算对了吗？请检查。",
+      "expected": true
+    },
+    {
+      "name": "trigger_09",
+      "prompt": "根据facts.json给工业装备写可接入渲染的shotlist.json。",
+      "expected": true
+    },
+    {
+      "name": "trigger_10",
+      "prompt": "帮我检查这份起重机视频脚本是否用了夸大的最高级。",
+      "expected": true
+    },
+    {
+      "name": "near_miss_01",
+      "prompt": "帮我渲染这个视频。",
+      "expected": false
+    },
+    {
+      "name": "near_miss_02",
+      "prompt": "起重机的工作原理是什么？",
+      "expected": false
+    },
+    {
+      "name": "near_miss_03",
+      "prompt": "写一份门机的投标技术方案。",
+      "expected": false
+    },
+    {
+      "name": "near_miss_04",
+      "prompt": "把已有视频配上中文语音，不改脚本。",
+      "expected": false
+    },
+    {
+      "name": "near_miss_05",
+      "prompt": "请将两段起重机视频合成为一个文件。",
+      "expected": false
+    },
+    {
+      "name": "near_miss_06",
+      "prompt": "帮我检查这个三维模型的几何尺寸。",
+      "expected": false
+    },
+    {
+      "name": "near_miss_07",
+      "prompt": "介绍一下桥式起重机和门式起重机的区别。",
+      "expected": false
+    },
+    {
+      "name": "near_miss_08",
+      "prompt": "起重量和跨度分别是什么意思？",
+      "expected": false
+    },
+    {
+      "name": "near_miss_09",
+      "prompt": "帮我做一个电影宣传片，主题是都市爱情。",
+      "expected": false
+    },
+    {
+      "name": "near_miss_10",
+      "prompt": "我想招聘起重机操作员，帮我写招聘启事。",
+      "expected": false
+    }
+  ]
+}

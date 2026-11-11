@@ -1,0 +1,40 @@
+{
+  "facts": [
+    {
+      "id": "F_rated_load",
+      "name": "额定起重量",
+      "value": 450,
+      "unit": "t",
+      "status": "verified",
+      "source": {
+        "doc": "参数表.pdf",
+        "page": 1,
+        "quote": "额定起重量 450 t"
+      }
+    },
+    {
+      "id": "F_span",
+      "name": "跨度",
+      "value": 28.5,
+      "unit": "m",
+      "status": "verified",
+      "source": {
+        "doc": "参数表.pdf",
+        "page": 2,
+        "quote": "跨度 28.5 m"
+      }
+    },
+    {
+      "id": "F_hoist_speed",
+      "name": "起升速度",
+      "value": 6,
+      "unit": "m/min",
+      "status": "verified",
+      "source": {
+        "doc": "参数表.pdf",
+        "page": 3,
+        "quote": "起升速度 6 m/min"
+      }
+    }
+  ]
+}

@@ -32,6 +32,8 @@ projects/<pid>/          运行时数据（gitignore）
 
 ## 2. 项目目录 `projects/<pid>/`
 
+六步创建入口 `/create.html` 的扩展契约见 [T27 工作流接口](T27-工作流接口.md)：`production_engine` 与 `director_recipe` 分开保存；`workflow.json`/`preview-timeline.json` 记录方案预览，`deliverables.json` 将成片、报告和项目包绑定到制作版本及文件摘要。模型输入变化时重新构建参数化 GLB/rig，禁止旧几何通过新预览；服务中断后允许重新预览恢复。旧高级工作室继续适用下面的数据约定。
+
 ```
 project.json        {id, name, brief, created_at, model:{kind:"step"|"parametric", glb, step?, dims_check?}}
 docs/<file>.pdf     上传的原始文档
@@ -58,9 +60,12 @@ llm/<n>_<task>.json 每次大模型调用的输入摘要与输出（便于溯源
   "status":"verified"               // verified | needs_review | confirmed | rejected
 }]}
 ```
-- `verified`：程序核验通过（quote 在该页原文中逐字出现，且 value 的数字出现在 quote 中）。
+- `verified`：程序核验通过（quote 在该页原文中逐字出现，数值和单位经全半角、千分位及单位别名规范化后与 quote 中相邻量值匹配）。这仅验证抽取一致性，不证明原始资料的真实性。
 - `needs_review`：核验未通过或模型不确定，需人工确认。`confirmed`：人工确认。`rejected`：人工否决，不可引用。
-- 可引用状态：verified、confirmed。
+- 可引用状态：verified、confirmed。引用时仍检查摘录一致性；人工修改数值而保留旧摘录会报 `QUOTE_MISMATCH`，需核对原文。
+- 可选 `type: "quantitative"|"qualitative"`；默认数值。qualitative 的 `value` 为原文文字、`unit` 必须为空，支持用途、结构等非数字陈述。不可用数值参数支撑无关文字结论。
+- 可选 `claim_type: "ranking"`：有明确排名/首台认证依据的事实；最高级只能由同句占位引用的 verified ranking 事实且摘录包含对应宣称放行。该标签不等于第三方认证真实性证明。
+- verified/confirmed 事实同 id、key 或 name 且量值不同（等值单位换算除外）为冲突，引用任一条即 block；交人工裁定，不自动挑选。
 - 规范 id（规划与模型生成会用到，提取时尽量对齐）：
   `F_rated_load`(t) `F_girder_length`(m) `F_overall_height`(m) `F_span`(m) `F_lift_height`(m)
   `F_hoist_speed`(m/min) `F_trolley_speed`(m/min) `F_gantry_speed`(m/min) `F_leg_height`(m) `F_girder_height`(m)
@@ -107,6 +112,7 @@ rig.json：
   "duration_s":6.0,
   "narration":"它的主梁长{{F_girder_length}}，{{A_girder_length_football}}。",
   "fact_refs":["F_girder_length"], "analogy_refs":["A_girder_length_football"], "asset_refs":[],
+  "claims":[{"text":"它的主梁长{{F_girder_length}}", "support":"F_girder_length"}, {"text":"{{A_girder_length_football}}", "support":"F_girder_length"}],
   "params":{},
   "review":{"status":"pending","note":""}
  }],
@@ -116,6 +122,9 @@ rig.json：
 ```
 - 台词中的数字一律用占位：`{{F_xxx}}` 解析为「数值+单位」（如「104米」），`{{A_xxx}}` 解析为类比 text。
 - `analogies[].ratio/text` 由 `app/agent/analogy.py` 计算并写入，大模型只选 `ref` 和 `axis`。
+- 每镜可选 `claims: [{text, support}]`，support 为事实 ID、素材 ID 或 `"generic"`。每个台词分句均需登记；事实/素材必须存在且语句可与其内容对齐，存在一个 ID 本身不能证明任意陈述。generic 不得夹带型号、客户、年份、排名等具体事实；词表不能穷尽全部实体。
+- 旧数据缺 claims 报 info `CLAIMS_MISSING`，技能交付按 warn；这不是准确度验收通过。`human_edited: true` 或 review.status=approved 的台词修改时逐字保留。
+- 类比真实比值与措辞容差：约≤10%；接近/相当于≤5%；超过必须真实比值大于措辞数值；几乎要求措辞数值略大于真实值且偏差≤5%。由 compute 生成，`ratio/text/ref_size` 被篡改报 block。
 - 各 kind 的 params：
   - `title`/`outro`：`{"title":"","subtitle":""}`
   - `model_orbit`：`{"from_deg":-30,"to_deg":30,"elevation_deg":15,"distance":1.6,"highlight":["girder"]}`（distance 为相对包围盒对角线的倍数）
@@ -135,6 +144,10 @@ rig.json：
             "message":"台词出现无出处的数字「三十米」","hint":"改用 {{F_xxx}} 占位或删除"}]}
 ```
 校验永不整体失败：只标出问题条目。`block` 级问题未处理时，编排在 validate 后暂停等人工（可强制继续，报告中注明）。
+
+新增规则：`EXAGGERATION`、`FACT_CONFLICT`、`QUOTE_MISMATCH`、`ANALOGY_ROUNDING`、`UNSUPPORTED_CLAIM` 为 block；`ABSOLUTE_CLAIM`、`UNIT_SUSPECT`、`QUOTE_ABSENT` 为 warn；`CLAIMS_MISSING` 为 info。校验错误 `CHECK_ERROR` 不代表通过，评测不得计为准确。
+
+离线评测可溯源率独立按台词分句计分母，不能以作者自报 claims 数作分母；需证据原文对齐及无相关错误才计支撑。generic 仅对保守识别的提问、阅读引导、明确类比计通过，未取证常识仍保留未支撑。此指标是保守规则覆盖，不能作为开放域语义真实性证明。
 
 ## 8. 时间线 timeline.json（播放器唯一输入）
 
@@ -167,6 +180,7 @@ URL 以 `/files/<pid>/` 开头时由后端静态服务 `projects/<pid>/`；播�
 ## 11. 后端 HTTP API（前缀 /api）
 
 - `POST /projects` `{name, brief}` → project.json；`GET /projects`；`GET /projects/{pid}`
+- `PATCH /projects/{pid}/settings` 局部更新 `{render_mode?, director_recipe?, target_s?}`；`render_mode=standard|photoreal|scale_film`，`director_recipe=off|auto|scale|motion|structure`。不合法组合原子拒绝。
 - `POST /projects/{pid}/docs`（multipart file）→ 解析并提取参数，返回 facts.json
 - `GET /projects/{pid}/facts`；`PATCH /projects/{pid}/facts/{fid}` `{value?, unit?, status?}`
 - `POST /projects/{pid}/model/step`（multipart）；`POST /projects/{pid}/model/parametric`
@@ -175,3 +189,13 @@ URL 以 `/files/<pid>/` 开头时由后端静态服务 `projects/<pid>/`；播�
 - `GET /projects/{pid}/shotlist`；`PATCH /projects/{pid}/shots/{sid}` `{narration?, params?, review?}`
 - `GET /projects/{pid}/issues`；`GET /projects/{pid}/report`
 - 静态：`/files/<pid>/...` → `projects/<pid>/...`；`/` → web/app；`/player/` → web/player；`/vendor/three/` → web/node_modules/three
+
+## 12. 尺度短片模式（T25）
+
+`scale_film` 是15–30秒、30fps的主梁长度专用模板，允许scale/auto配方；目标与各镜边界对齐帧网格。使用有出处的确认主梁长度、整机高度和参数化模型；m/mm归一化，出处与原值保留，其他默认几何逐项记录assumed。STEP、其他主题及不相容几何明确拒绝，不换题或暗中回退。
+
+三镜角色detail/hero/compare与4/5/6权重来自Skill中的render profile；该分支不调用LLM编写分镜。每次从plan重跑同步重建参数化模型。专用Blender输出画面，由后期生成当前参数/来源标题与真实TTS；超时长停止，不裁音或静默延长。普通播放器预览不代表该模式成片；UI直接播放最终MP4，QA从最终MP4抽帧。
+
+GET project的`scale_film_ready`依据本次成功合成、当前事实/分镜/模型/音轨/算法来源hash及final字节hash判定。参数或台词改变、新运行未完成或失败时均false；界面隐藏过期播放与下载入口。仅重跑qa/report不能把前次失败或旧片改为完成。台词/params人工修改标为human_edited；固定模板无法兼容时停止而不覆盖。
+
+既有通用校验的30–60秒提示保留，尺度模板15–30秒合法性由专用边界检查；photoreal硬性要求未放宽。详见[T25应用说明](T25-应用尺度短片.md)。

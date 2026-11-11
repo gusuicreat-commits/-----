@@ -129,9 +129,12 @@ def _render(args: list[str], timeout: float, on_line: Callable[[str], None]) -> 
 
 def render_model_shots(pid: str, run: str, timeline: dict) -> dict[str, dict]:
     project = storage.read_json(pid, "project.json", {})
-    if project.get("render_mode", "standard") != "photoreal":
+    strict = project.get("production_engine") == "blender"
+    if project.get("render_mode", "standard") != "photoreal" and not strict:
         return {}
     executable = blender_executable()
+    if not executable and strict:
+        raise RuntimeError("未找到 Blender，精细制作无法运行")
     if not executable:
         events.emit(pid, run=run, stage="render", tool="render.blender", status="warn",
                     summary="未找到 Blender，写实镜头已整体回退网页三维")
@@ -206,10 +209,49 @@ def render_model_shots(pid: str, run: str, timeline: dict) -> dict[str, dict]:
                            "anchors": base + "/anchors.json", "engine": engine,
                            "width": width, "height": height, "look": look}
         except Exception as exc:
+            if strict:
+                raise RuntimeError(f"镜头 {sid} 精细渲染失败，已停止制作：{exc}") from exc
             events.emit(pid, run=run, stage="render", tool="render.blender", status="warn",
                         summary=f"镜头 {sid} 写实渲染失败，已回退网页三维",
                         detail={"shot": sid, "error": str(exc)[-2000:]})
         else:
             events.emit(pid, run=run, stage="render", tool="render.blender", status="ok",
                         summary=f"镜头 {sid} 写实背景已就绪", detail={"shot": sid})
+    return result
+
+
+def preview_keyframes(pid: str, run: str, timeline: dict, revision: str) -> list[dict]:
+    """Render one genuine Blender middle frame per supported model shot, isolated by revision."""
+    executable = blender_executable()
+    if not executable:
+        raise RuntimeError("未找到 Blender，无法生成精细关键帧")
+    result = []
+    root = storage.project_dir(pid)
+    for original in timeline["shots"]:
+        if original["kind"] not in MODEL_KINDS:
+            if original["kind"] == "real_media":
+                asset = timeline.get("assets", {}).get(original.get("params", {}).get("asset"), {})
+                result.append({"shot": original["id"], "url": asset.get("url"), "engine": "source", "kind": asset.get("kind")})
+            continue
+        shot = dict(original)
+        if shot["kind"] == "analogy":
+            shot["analogy_data"] = timeline.get("analogies", {}).get(shot.get("params", {}).get("analogy"), {})
+            if shot["analogy_data"].get("ref") not in ANALOGY_REFS:
+                raise ValueError(f"{shot['id']} 类比不支持精细关键帧")
+        relative = f"renders/workflow-preview/{revision}/{shot['id']}"
+        out = storage.safe_path(root, relative)
+        out.mkdir(parents=True, exist_ok=True)
+        target = out / "still_eevee.png"
+        if not target.is_file():
+            duration = shot["end"] - shot["start"]
+            args = [executable, "--background", "--factory-startup", "--python-exit-code", "1", "--python",
+                    str(config.ROOT / "blender/render_shot.py"), "--", "--facts", str(root / "facts.json"),
+                    "--shot-json", json.dumps(shot, ensure_ascii=False), "--out", str(out), "--engine", "eevee",
+                    "--duration", str(duration), "--still-at", str(duration / 2), "--width", "640", "--height", "360",
+                    "--samples", "8", "--skip-video", "--safe-rect", ",".join(str(v) for v in shot_safe_rect(shot))]
+            events.emit(pid, run=run, stage="preview", tool="render.blender", status="start", summary=f"正在生成 {shot['id']} 精细关键帧")
+            _render(args, float(os.environ.get("KEPU_BLENDER_TIMEOUT_S", "1800")), lambda line: None)
+        if not target.is_file():
+            raise RuntimeError(f"{shot['id']} 未生成精细关键帧")
+        result.append({"shot": shot["id"], "url": f"/files/{pid}/{relative}/still_eevee.png", "engine": "blender", "kind": "image"})
     return result

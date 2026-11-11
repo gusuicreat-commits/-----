@@ -10,6 +10,9 @@ from app.model3d.rig import motion_speedup
 from .planner import PARAM_DEFAULTS, expected_source
 from .text import PLACEHOLDER, find_duplicate_phrases, find_unsourced_numbers, resolve
 
+from .claim_rules import check_claims
+from .accuracy_rules import check_accuracy
+
 EQUIPMENT = re.compile(r"起重机|门机|龙门吊|吊车|主梁|支腿|吊钩|小车|crane|gantry|hook|girder", re.I)
 
 
@@ -52,6 +55,12 @@ def validate(pid: str, run: str) -> dict:
         if not isinstance(shotlist["shots"], list):
             raise ValueError("镜头列表格式无效")
         shots = shotlist["shots"]
+
+    with check("宣称与参数一致性"):
+        check_claims(facts_data, shotlist, add)
+
+    with check("准确度与陈述审计"):
+        check_accuracy(facts_data, shotlist, assets_data, rig, add)
 
     total = 0.0
     pending = 0
@@ -102,7 +111,7 @@ def validate(pid: str, run: str) -> dict:
                 add("SOURCE_MISMATCH", "block", "镜头类型与画面来源不一致", "按镜头类型设置 model、real、ai 或 graphic", sid)
         with check("运动参数", sid):
             if kind == "motion":
-                params.pop("speedup", None)
+                declared_speedup = params.pop("speedup", None)
                 axis = params.get("axis")
                 if axis not in rig["axes"]:
                     add("MOTION_AXIS_UNAVAILABLE", "block", f"模型未提供运动轴：{axis}", "选择 rig 中已存在的运动轴", sid)
@@ -119,6 +128,10 @@ def validate(pid: str, run: str) -> dict:
                     if "error" in motion:
                         add("MOTION_OUT_OF_RANGE", "block", "运动参数无效：" + motion["error"], "将起终点设在行程内，并使用有效时长", sid)
                     else:
+                        if sourced and declared_speedup is not None and (
+                            not isinstance(declared_speedup, (int, float)) or not math.isfinite(declared_speedup)
+                            or declared_speedup < motion["speedup"] - 1e-6):
+                            add("MOTION_SPEEDUP_MISMATCH", "block", "运动超过资料速度，原倍速标注不足", "使用校验计算后的 speedup，不能将加速演示标成真实速度", sid)
                         params["speedup"] = motion["speedup"] if sourced else 1
         with check("素材引用", sid):
             refs = list(shot.get("asset_refs", []))

@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+import numpy as np
 import trimesh
 
 from app.model3d import (
@@ -144,3 +145,44 @@ def test_glbinfo_invalid_header(tmp_path: Path) -> None:
     path.write_bytes(b"invalid")
     with pytest.raises(ValueError, match="文件头"):
         read_glb_nodes(path)
+
+
+@pytest.mark.parametrize("length,height,span,gh,wheels", [(104, 51, 88, 6.5, 32), (120, 63, 96, 8, 63), (80, 42, 68, 5, 128)])
+def test_detailed_model_exact_dimensions_and_wheels(
+    tmp_path: Path, length: float, height: float, span: float, gh: float, wheels: int,
+) -> None:
+    facts = {"F_girder_length": length, "F_overall_height": height, "F_span": span,
+             "F_girder_height": gh, "F_wheel_count": wheels}
+    result = build_parametric(facts, tmp_path / "detailed.glb")
+    scene = trimesh.load_scene(result["glb"])
+    assert scene.extents[0] == pytest.approx(length, abs=.01)
+    assert scene.bounds[:, 1] == pytest.approx([0, height], abs=.01)
+    assert all(row["ok"] for row in dims_check(result["bbox_m"], facts))
+    assert result["used"]["F_wheel_count"] == wheels
+    rail_centers = []
+    for node in ("rail_left_steel", "rail_right_steel"):
+        matrix, geometry = scene.graph[node]
+        rail_centers.append(trimesh.transform_points(scene.geometry[geometry].bounds, matrix)[:, 0].mean())
+    assert rail_centers[1] - rail_centers[0] == pytest.approx(span, abs=.01)
+    anchors = sorted(node for node in scene.graph.nodes if node.startswith("wheel_"))
+    assert len(anchors) == wheels
+    for node in anchors:
+        center = scene.graph[node][0][:3, 3]
+        leg = "leg_left" if center[0] < 0 else "leg_right"
+        steel = scene.geometry[scene.graph[f"{leg}_steel"][1]]
+        # 每个标记必须对应实际轮缘顶点，不能只靠空节点满足轮数。
+        radius = center[1] - .3
+        target = center + [.475, radius+.07, 0]
+        assert np.linalg.norm(steel.vertices - target, axis=1).min() < .001
+    assert {mesh.visual.material.name for mesh in scene.geometry.values()} == {
+        "paint", "primer", "steel", "glass", "rubber", "hazard",
+    }
+    assert len(scene.geometry) < 35
+    assert triangle_count(Path(result["glb"])) <= 300_000
+    assert scene.geometry[scene.graph["leg_left_paint"][1]].volume > 0
+
+
+@pytest.mark.parametrize("count", [0, 3, 4.5, float("nan"), float("inf"), 513])
+def test_invalid_wheel_count(tmp_path: Path, count: float) -> None:
+    with pytest.raises(ValueError, match="车轮总数"):
+        build_parametric({**FACTS, "F_wheel_count": count}, tmp_path / "invalid.glb")

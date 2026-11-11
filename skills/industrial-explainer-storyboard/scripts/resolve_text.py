@@ -14,7 +14,9 @@ NUMBER_RULES = (
 )
 
 
-def format_value(value: float, unit: str) -> str:
+def format_value(value: float | str, unit: str) -> str:
+    if isinstance(value, str):
+        return value
     number = str(int(value)) if float(value).is_integer() else str(value)
     return f"每分钟{number}米" if unit == "m/min" else number + UNITS.get(unit, unit)
 
@@ -24,7 +26,7 @@ def resolve(narration: str, facts_by_id: dict[str, dict], analogies_by_id: dict[
         key = match[1]
         if key.startswith("F_") and key in facts_by_id:
             fact = facts_by_id[key]
-            return format_value(fact["value"], fact["unit"])
+            return str(fact["value"]) if fact.get("type") == "qualitative" else format_value(fact["value"], fact["unit"])
         if key.startswith("A_") and key in analogies_by_id:
             return analogies_by_id[key]["text"]
         return match[0]
@@ -50,7 +52,7 @@ def find_duplicate_phrases(text: str) -> list[str]:
 
 
 def find_unsourced_numbers(text_without_placeholders: str) -> list[str]:
-    text = text_without_placeholders
+    text = re.sub(r"一根头发丝", "      ", text_without_placeholders)
     # 掩去固定词语，保持原文偏移；计量表达「第一百米」不能被豁免。
     for idiom in IDIOMS:
         text = re.sub(re.escape(idiom) + rf"(?![零〇一二两三四五六七八九十百千万亿]|{'|'.join(MEASURES)})",
@@ -63,6 +65,7 @@ def find_unsourced_numbers(text_without_placeholders: str) -> list[str]:
                 if not tail.startswith(MEASURES):
                     continue
             found.append((match.start(), match[0]))
+    found.extend((m.start(), m[0]) for m in re.finditer(rf"百分之{CN_NUMBER}", text))
     return [value for _, value in sorted(found)]
 
 

@@ -85,6 +85,10 @@ def build_report(pid: str) -> dict:
         rig = storage.read_json(pid, "model/rig.json", {})
         report = {"project": {"id": pid, "name": project["name"]}, "generated_at": datetime.now(timezone.utc).isoformat(),
                   "duration_s": timeline.get("rendered_duration_s", timeline.get("duration_s", 0)),
+                  "render_mode": project.get("render_mode", "standard"), "style": timeline.get("style"),
+                  "tts": [{"shot": s["id"], "metadata": storage.read_json(pid, f"tts/{s['id']}.words.json", {})}
+                          for s in timeline["shots"]] if project.get("render_mode") == "scale_film" else [],
+                  "planner": "deterministic scale_film template" if project.get("render_mode") == "scale_film" else "llm",
                   "runtime_model": llm.MODEL, "run": run.get("run"), "forced": run.get("forced", False),
                   "stage_durations_s": _durations(pid, run),
                   "llm": {"calls": len(logs), "cost_usd": sum(known_costs), "unknown_cost_calls": len(logs) - len(known_costs),
@@ -118,6 +122,9 @@ def build_report(pid: str) -> dict:
         body = [f'<h1>{_escape(project["name"])} · 溯源报告</h1>',
                 f'<p>生成时间：{_escape(report["generated_at"])}　成片时长：{report["duration_s"]:.2f} 秒</p>',
                 f'<p>运行时模型：{_escape(llm.MODEL)}　大模型调用：{len(logs)} 次（项目累计）　已知费用合计：${sum(known_costs):.4f}</p>']
+        if project.get("render_mode") == "scale_film":
+            body.append('<p>样式：scale_film · 确定性三镜模板（分镜未调用大模型）；参数化示意，非真实测绘。</p>')
+            body.append('<p>实际配音引擎：' + _escape('、'.join(str(item['metadata'].get('engine', '未记录')) for item in report['tts'] if isinstance(item['metadata'], dict))) + '</p>')
         if report["llm"]["unknown_cost_calls"]:
             body.append(f'<p>有 {report["llm"]["unknown_cost_calls"]} 次调用未提供费用，未计入合计。</p>')
         if report["has_unresolved_blocks"]:

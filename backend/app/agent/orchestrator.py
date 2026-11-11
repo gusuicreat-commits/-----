@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from app import events, storage
 from app.ingest import facts as ingest
-from app.media import blender, compose, tts
+from app.media import blender, compose, tts, scale_film as film_media
 from app.model3d import parametric, rig, step
 from . import planner, validator, timeline, qa, report
 from .text import resolve
@@ -62,6 +62,10 @@ def prepare_model(pid: str, run: str, *, step_path: Path | None = None) -> dict:
 
 def synthesize_shots(pid: str, run: str) -> None:
     shotlist = storage.read_json(pid, "shotlist.json")
+    project = storage.read_json(pid, "project.json", {})
+    # The six-step flow uses a conversational voice at its natural rate.
+    voice_options = ({"voice": "zh-CN-YunxiNeural", "rate": "+0%"}
+                     if project.get("production_engine") else {})
     facts = {f["id"]: f for f in storage.read_json(pid, "facts.json", {"facts": []})["facts"]}
     analogies = timeline.resolve_analogies(shotlist, facts)
     shotlist["analogies"] = list(analogies.values())
@@ -71,10 +75,18 @@ def synthesize_shots(pid: str, run: str) -> None:
         sid = shot["id"]
         output = storage.safe_path(storage.project_dir(pid) / "tts", f"{sid}.mp3")
         try:
-            result = tts.synthesize(resolve(shot["narration"], facts, analogies), output)
+            spoken = resolve(shot["narration"], facts, analogies)
+            result = tts.synthesize(spoken, output, **voice_options)
+            if storage.read_json(pid, "project.json").get("render_mode") == "scale_film":
+                result["spoken_text"] = spoken
+                storage.atomic_json(output.with_suffix(".words.json"), result)
+                if result["duration_s"] + .8 > shot["duration_s"]:
+                    raise ValueError(f"镜头 {sid} 配音超出固定时长，停止而不裁音；请明确调整目标时长或台词")
             events.emit(pid, run=run, stage="tts", tool="tts.edge", status="ok",
                         summary=f"镜头 {sid} 配音完成，时长 {result['duration_s']:.2f} 秒",
-                        detail={"shot": sid, "engine": result["engine"], "duration_s": result["duration_s"]})
+                        detail={"shot": sid, "engine": result["engine"], "duration_s": result["duration_s"],
+                                "requested_voice": voice_options.get("voice", "zh-CN-YunjianNeural"),
+                                "requested_rate": voice_options.get("rate", "+4%")})
         except Exception as exc:
             events.emit(pid, run=run, stage="tts", tool="tts.edge", status="error",
                         summary=f"镜头 {sid} 配音失败", detail={"shot": sid, "error": str(exc)})
@@ -106,33 +118,42 @@ def _execute(pid: str, state: dict, *, from_stage: str | None, force: bool, base
                                     summary=f"已有 {len(facts)} 条参数，跳过" if facts else "没有 PDF 文档，跳过提取")
                 elif stage == "model":
                     model = storage.read_json(pid, "project.json").get("model")
-                    if not model:
+                    if storage.read_json(pid, "project.json").get("render_mode") == "scale_film":
+                        events.emit(pid, run=run, stage=stage, tool="model.parametric", status="ok", summary="尺度短片将在plan阶段按确认参数同步重建模型")
+                    elif not model:
                         prepare_model(pid, run)
                     else:
                         events.emit(pid, run=run, stage=stage, tool="model.step_to_glb" if model["kind"] == "step" else "model.parametric",
                                     status="ok", summary="已有三维模型，跳过生成")
                 elif stage == "plan":
-                    if not storage.read_json(pid, "shotlist.json") or from_stage is not None:
+                    if storage.read_json(pid, "project.json").get("render_mode") == "scale_film" or not storage.read_json(pid, "shotlist.json") or from_stage is not None:
                         planner.plan(pid, run)
                     else:
                         events.emit(pid, run=run, stage=stage, tool="llm.opus.plan", status="ok", summary="已有分镜，跳过规划")
                 elif stage == "validate":
                     issues = validator.validate(pid, run)
-                    if any(i["severity"] == "block" for i in issues["issues"]):
+                    scale_mode = storage.read_json(pid, "project.json").get("render_mode") == "scale_film"
+                    if scale_mode:
+                        from .scale_film import assert_current
+                        assert_current(pid)
+                    if any(i["severity"] == "block" for i in issues["issues"]) and not scale_mode:
                         planner.repair(pid, run, issues)
                         issues = validator.validate(pid, run)
                     count = sum(i["severity"] == "block" for i in issues["issues"])
-                    if count and not force:
+                    if count and (not force or scale_mode):
                         state["state"] = "paused"
                         events.emit(pid, run=run, stage=stage, tool="validate.shotlist", status="warn",
                                     summary=f"存在 {count} 个阻断问题，等待人工复核")
                         paused = True
-                    if count and force:
+                    if count and force and not scale_mode:
                         state["forced"] = True
                 elif stage == "tts":
                     synthesize_shots(pid, run)
                 elif stage == "render":
                     built = timeline.build_timeline(pid)
+                    if storage.read_json(pid, "project.json").get("render_mode") == "scale_film":
+                        film_media.render(pid, run, built)
+                        continue
                     backgrounds = blender.render_model_shots(pid, run, built)
                     for shot in built["shots"]:
                         shot.pop("bg", None)
@@ -141,8 +162,14 @@ def _execute(pid: str, state: dict, *, from_stage: str | None, force: bool, base
                     storage.write_json(pid, "timeline.json", built)
                     compose.render_video(pid, run, base_url=base_url)
                 elif stage == "compose":
-                    compose.mux(pid, run)
+                    if storage.read_json(pid, "project.json").get("render_mode") == "scale_film":
+                        film_media.mux(pid, run)
+                    else:
+                        compose.mux(pid, run)
                 elif stage == "qa":
+                    if storage.read_json(pid, "project.json").get("render_mode") == "scale_film":
+                        from .scale_film import assert_final
+                        assert_final(pid, run)
                     try:
                         qa.visual_qa(pid, run, base_url=base_url)
                     except Exception as exc:
@@ -150,12 +177,18 @@ def _execute(pid: str, state: dict, *, from_stage: str | None, force: bool, base
                         events.emit(pid, run=run, stage=stage, tool="llm.opus.visual_qa", status="warn",
                                     summary="画面质检失败，请人工复核", detail={"error": str(exc)})
                 elif stage == "report":
+                    if storage.read_json(pid, "project.json").get("render_mode") == "scale_film":
+                        from .scale_film import assert_final
+                        assert_final(pid, run)
                     report.build_report(pid)
             finally:
                 state["stage_durations_s"][stage] = round(time.monotonic() - started, 4)
                 storage.write_json(pid, "run.json", state)
             if paused:
                 return
+        if storage.read_json(pid, "project.json").get("render_mode") == "scale_film":
+            from .scale_film import assert_final
+            assert_final(pid, run)
         state["state"] = "done"
     except Exception as exc:
         state.update(state="error", error="流水线执行失败：" + str(exc))

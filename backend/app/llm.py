@@ -17,6 +17,26 @@ from app import config, storage
 MODEL = "claude-opus-5-5"
 
 
+def provider_status() -> dict:
+    """Expose existing provider configuration, never credentials or a fake health check."""
+    mode = os.environ.get("KEPU_LLM_MODE", "live")
+    sdk = bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"))
+    cli = bool(shutil.which("claude"))
+    configured = mode in {"live", "record", "replay"} and (mode == "replay" or sdk or cli)
+    provider = "replay" if mode == "replay" else "anthropic_sdk" if sdk else "claude_cli"
+    if mode not in {"live", "record", "replay"}:
+        error = "大模型模式无效，请使用 live、replay 或 record"
+    elif not configured:
+        error = "未配置现有 Claude 服务：请登录 Claude Code 或设置 ANTHROPIC_API_KEY"
+    else:
+        error = None
+    return {"configured": configured, "provider": provider, "model": MODEL, "mode": mode,
+            "base_url": None, "vision_supported": configured, "verified": False,
+            "error": error,
+            "note": "离线回放，不调用真实模型" if mode == "replay" else
+                    "沿用现有 Claude 服务；检测到配置不等于已通过真实调用"}
+
+
 class LLMError(Exception):
     pass
 

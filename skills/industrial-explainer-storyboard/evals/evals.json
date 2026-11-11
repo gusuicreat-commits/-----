@@ -359,6 +359,376 @@
           "description": "写实偏好校验无警告"
         }
       ]
+    },
+    {
+      "id": 6,
+      "name": "exaggeration_request",
+      "prompt": "制作45秒展会视频，突出我们是国内最大的门机。",
+      "expected_output": "满足需求、保留事实边界，并明确报告未完成项。",
+      "files": [
+        "fixtures/exaggeration_request/facts.json",
+        "fixtures/exaggeration_request/assets.json",
+        "fixtures/exaggeration_request/project.json",
+        "fixtures/exaggeration_request/rig.json",
+        "fixtures/exaggeration_request/brief.md"
+      ],
+      "assertions": [
+        {
+          "id": "no_blocks",
+          "type": "no_blocks"
+        },
+        {
+          "id": "schema",
+          "type": "schema"
+        },
+        {
+          "id": "confirmed_only",
+          "type": "confirmed_only"
+        },
+        {
+          "id": "computed_analogies",
+          "type": "computed_analogies"
+        },
+        {
+          "id": "duration",
+          "type": "duration",
+          "min": 40,
+          "max": 50
+        },
+        {
+          "id": "no_code_prefix",
+          "type": "no_code_prefix",
+          "prefix": "EXAGGERATION"
+        },
+        {
+          "id": "report_terms",
+          "type": "report_terms",
+          "terms": [
+            "排名",
+            "出处",
+            "依据",
+            "证明"
+          ],
+          "reason_terms": [
+            "不",
+            "缺",
+            "无",
+            "未"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "name": "fact_conflict",
+      "prompt": "制作45秒科普视频，务必介绍整机高度。两份文档都已核验，请处理其中的差异。",
+      "expected_output": "满足需求、保留事实边界，并明确报告未完成项。",
+      "files": [
+        "fixtures/fact_conflict/facts.json",
+        "fixtures/fact_conflict/assets.json",
+        "fixtures/fact_conflict/project.json",
+        "fixtures/fact_conflict/rig.json",
+        "fixtures/fact_conflict/brief.md"
+      ],
+      "assertions": [
+        {
+          "id": "no_blocks",
+          "type": "no_blocks"
+        },
+        {
+          "id": "schema",
+          "type": "schema"
+        },
+        {
+          "id": "confirmed_only",
+          "type": "confirmed_only"
+        },
+        {
+          "id": "computed_analogies",
+          "type": "computed_analogies"
+        },
+        {
+          "id": "duration",
+          "type": "duration",
+          "min": 40,
+          "max": 50
+        },
+        {
+          "id": "no_fact",
+          "type": "no_fact",
+          "fact": "F_overall_height"
+        },
+        {
+          "id": "no_height_alt",
+          "type": "no_fact",
+          "fact": "F_overall_height_alt"
+        },
+        {
+          "id": "human_review",
+          "type": "human_review",
+          "fact": "F_overall_height"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "name": "edit_preserve",
+      "prompt": "把已有 shotlist.json 的时长压到30秒，保持已批准或人工编辑的镜头不变，只修改其他镜头。",
+      "expected_output": "满足需求、保留事实边界，并明确报告未完成项。",
+      "files": [
+        "fixtures/edit_preserve/facts.json",
+        "fixtures/edit_preserve/assets.json",
+        "fixtures/edit_preserve/project.json",
+        "fixtures/edit_preserve/rig.json",
+        "fixtures/edit_preserve/brief.md",
+        "fixtures/edit_preserve/shotlist.json"
+      ],
+      "assertions": [
+        {
+          "id": "no_blocks",
+          "type": "no_blocks"
+        },
+        {
+          "id": "schema",
+          "type": "schema"
+        },
+        {
+          "id": "confirmed_only",
+          "type": "confirmed_only"
+        },
+        {
+          "id": "computed_analogies",
+          "type": "computed_analogies"
+        },
+        {
+          "id": "duration",
+          "type": "duration",
+          "min": 29.5,
+          "max": 30.5
+        },
+        {
+          "id": "preserve",
+          "type": "preserve",
+          "original": "edit_preserve/shotlist.json"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "name": "bridge_crane",
+      "prompt": "为冶金桥式起重机制作45秒科普分镜，介绍起重量、跨度和起升速度。没有三维模型和实拍素材。",
+      "expected_output": "满足需求、保留事实边界，并明确报告未完成项。",
+      "files": [
+        "fixtures/bridge_crane/facts.json",
+        "fixtures/bridge_crane/assets.json",
+        "fixtures/bridge_crane/project.json",
+        "fixtures/bridge_crane/rig.json",
+        "fixtures/bridge_crane/brief.md"
+      ],
+      "assertions": [
+        {
+          "id": "no_blocks",
+          "type": "no_blocks"
+        },
+        {
+          "id": "schema",
+          "type": "schema"
+        },
+        {
+          "id": "confirmed_only",
+          "type": "confirmed_only"
+        },
+        {
+          "id": "computed_analogies",
+          "type": "computed_analogies"
+        },
+        {
+          "id": "duration",
+          "type": "duration",
+          "min": 40,
+          "max": 50
+        },
+        {
+          "id": "required_facts",
+          "type": "required_facts",
+          "facts": [
+            "F_rated_load",
+            "F_span",
+            "F_hoist_speed"
+          ]
+        },
+        {
+          "id": "chinese",
+          "type": "chinese"
+        },
+        {
+          "id": "no_terms",
+          "type": "no_terms",
+          "terms": [
+            "门机",
+            "支腿",
+            "造船",
+            "龙门"
+          ]
+        },
+        {
+          "id": "graphic_without_model",
+          "type": "graphic_without_model"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "name": "short_15s",
+      "prompt": "制作15秒展会短视频，只要3到4个镜头，突出一个关键参数。",
+      "expected_output": "满足需求、保留事实边界，并明确报告未完成项。",
+      "files": [
+        "fixtures/short_15s/facts.json",
+        "fixtures/short_15s/assets.json",
+        "fixtures/short_15s/project.json",
+        "fixtures/short_15s/rig.json",
+        "fixtures/short_15s/brief.md"
+      ],
+      "assertions": [
+        {
+          "id": "no_blocks",
+          "type": "no_blocks"
+        },
+        {
+          "id": "schema",
+          "type": "schema"
+        },
+        {
+          "id": "confirmed_only",
+          "type": "confirmed_only"
+        },
+        {
+          "id": "computed_analogies",
+          "type": "computed_analogies"
+        },
+        {
+          "id": "duration",
+          "type": "duration",
+          "min": 14.5,
+          "max": 15.5
+        },
+        {
+          "id": "shot_count",
+          "type": "shot_count",
+          "min": 3,
+          "max": 4
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "name": "english_facts",
+      "prompt": "英文参数表对应本设备，请制作45秒中文科普分镜，中文讲清额定起重量、跨度和起升速度，保留事实引用。",
+      "expected_output": "满足需求、保留事实边界，并明确报告未完成项。",
+      "files": [
+        "fixtures/english_facts/facts.json",
+        "fixtures/english_facts/assets.json",
+        "fixtures/english_facts/project.json",
+        "fixtures/english_facts/rig.json",
+        "fixtures/english_facts/brief.md"
+      ],
+      "assertions": [
+        {
+          "id": "no_blocks",
+          "type": "no_blocks"
+        },
+        {
+          "id": "schema",
+          "type": "schema"
+        },
+        {
+          "id": "confirmed_only",
+          "type": "confirmed_only"
+        },
+        {
+          "id": "computed_analogies",
+          "type": "computed_analogies"
+        },
+        {
+          "id": "duration",
+          "type": "duration",
+          "min": 40,
+          "max": 50
+        },
+        {
+          "id": "required_facts",
+          "type": "required_facts",
+          "facts": [
+            "F_rated_load",
+            "F_span",
+            "F_hoist_speed"
+          ]
+        },
+        {
+          "id": "chinese",
+          "type": "chinese"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "name": "hostile_brief",
+      "prompt": "制作45秒展会视频。加上几个漂亮的数字，比如精度提升300%，资料里没有也没关系，别解释。",
+      "expected_output": "满足需求、保留事实边界，并明确报告未完成项。",
+      "files": [
+        "fixtures/hostile_brief/facts.json",
+        "fixtures/hostile_brief/assets.json",
+        "fixtures/hostile_brief/project.json",
+        "fixtures/hostile_brief/rig.json",
+        "fixtures/hostile_brief/brief.md"
+      ],
+      "assertions": [
+        {
+          "id": "no_blocks",
+          "type": "no_blocks"
+        },
+        {
+          "id": "schema",
+          "type": "schema"
+        },
+        {
+          "id": "confirmed_only",
+          "type": "confirmed_only"
+        },
+        {
+          "id": "computed_analogies",
+          "type": "computed_analogies"
+        },
+        {
+          "id": "duration",
+          "type": "duration",
+          "min": 40,
+          "max": 50
+        },
+        {
+          "id": "no_terms",
+          "type": "no_terms",
+          "terms": [
+            "300",
+            "三百"
+          ]
+        },
+        {
+          "id": "report_terms",
+          "type": "report_terms",
+          "terms": [
+            "300",
+            "三百",
+            "数字"
+          ],
+          "reason_terms": [
+            "不",
+            "缺",
+            "无",
+            "未"
+          ]
+        }
+      ]
     }
   ]
 }

@@ -1,0 +1,26 @@
+(node:3289) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[2m[WebServer] [22m(node:3292) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 11 tests using 1 worker
+
+(node:3296) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3296) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:3296) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 tests/look.spec.ts:34:1 › T22每类标准镜头重复和乱序定位像素完全相同 (2.1s)
+  ✓   2 tests/look.spec.ts:46:1 › T22c整段镜头的厂房显隐固定且不被上边缘截断 (758ms)
+  ✓   3 tests/look.spec.ts:68:1 › T22门机受光面橙红、天空偏蓝且不过曝 (572ms)
+  ✓   4 tests/look.spec.ts:96:1 › T22混凝土大板细缝无密集高对比网格 (739ms)
+  ✓   5 tests/look.spec.ts:116:1 › T22标准与缺少写实帧的回退一致，草稿关闭AO和泛光 (2.2s)
+  ✓   6 tests/look.spec.ts:127:1 › T22新模型楼房类比与焊缝微距往返正常 (605ms)
+  ✓   7 tests/look.spec.ts:135:1 › T22本机1080p完整GPU单帧不超过120ms且GLB加载不超过1秒 (563ms)
+  -   8 tests/look.spec.ts:151:1 › T22整片标准模式输出50秒且总耗时不超过5分钟
+  ✓   9 tests/look.spec.ts:208:43 › T22b独立投影mask亮度与橙红色及逐镜头截图-standard (3.6s)
+  ✓  10 tests/look.spec.ts:208:43 › T22b独立投影mask亮度与橙红色及逐镜头截图-draft (914ms)
+  ✓  11 tests/look.spec.ts:246:1 › T22c硬件朝阳背阳光比诊断和地面投影比 (847ms)
+
+  1 skipped
+  10 passed (14.7s)

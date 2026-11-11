@@ -43,3 +43,22 @@ def test_invalid_patch(project, patch):
 def test_missing_fact(project):
     with pytest.raises(KeyError):
         update_fact(project["id"], "F_missing", {"status": "confirmed"})
+
+
+@pytest.mark.parametrize('claim_type', [None, 'ranking'])
+def test_optional_ranking_metadata_survives_extraction(monkeypatch, project, sample_pdf, claim_type):
+    from app.ingest import facts, pdf
+    quote = '国内首台认证序位 1'
+    item = {'id':'F_rank', 'name':'认证序位', 'value':1, 'unit':'', 'page':1, 'quote':quote}
+    if claim_type:
+        item['claim_type'] = claim_type
+    monkeypatch.setattr(pdf, 'extract_pages', lambda path: [{'page':1, 'text':quote}])
+    def complete(task, system, user, schema, **kwargs):
+        assert schema['properties']['facts']['items']['properties']['claim_type']['enum'] == ['ranking']
+        return {'facts':[item]}
+    monkeypatch.setattr(llm, 'complete_json', complete)
+    result = facts.extract_facts(project['id'], 'r1', sample_pdf)['facts'][0]
+    assert result['status'] == 'verified'
+    assert result.get('claim_type') == claim_type
+    assert ('claim_type' in result) == bool(claim_type)
+    assert storage.read_json(project['id'], 'facts.json')['facts'][0] == result

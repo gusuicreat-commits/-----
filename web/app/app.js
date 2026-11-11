@@ -32,13 +32,16 @@ function renderRun() {
   const state=ctx.state, run=state.run, running=run.state==='running' || runPending;
   const label=stageLabel(run.stage);
   $('#generate').disabled=!state.pid || running || settingsPending; $('#generate').textContent=running?`${label}…`:'▶ 生成视频';
-  $('#open-film').disabled=!state.pid || running || !(run.state==='done' || state.report.generated_at);
+  const filmReady=state.project?.render_mode==='scale_film'?state.project.scale_film_ready===true && run.state==='done':run.state==='done' || state.report.generated_at;
+  $('#open-film').disabled=!state.pid || running || !filmReady;
   $('#rerun').disabled=!state.pid || running || settingsPending; $('#rerun-stage').disabled=running;
   $('#project-select').disabled=runPending || settingsPending;
   $('#render-mode').disabled=!state.project || running || settingsPending;
+  $('#director-settings-open').disabled=!state.project || running || settingsPending;
   $('#render-mode').value=state.project?.render_mode || 'standard';
   $('#render-mode option[value=photoreal]').disabled=!state.project?.blender_available;
-  $('#render-mode-hint').textContent=state.project && !state.project.blender_available?'未检测到 Blender，写实选项不可用。':'';
+  $('#render-mode option[value=scale_film]').disabled=!state.project?.blender_available;
+  $('#render-mode-hint').textContent=state.project && !state.project.blender_available?'未检测到 Blender，尺度短片与写实选项不可用。':state.project?.render_mode==='scale_film'?'主梁近景 → 整机揭示 → 同尺度比较；按当前参数重新制作。':'';
   $('#run-status').outerHTML=`<span id="run-status" class="pill ${esc(run.state || 'pending')}" role="status">${running?`${label} · 运行中`:({paused:'等待人工复核',done:'已完成',error:'运行失败'})[run.state] || (state.pid?'资料就绪':'等待资料')}</span>`;
   const blockCount=state.issues.filter(i=>i.severity==='block').length, paused=run.state==='paused';
   document.querySelectorAll('[data-action="force"]').forEach(b=>{ b.hidden=!paused; b.disabled=running; });
@@ -61,6 +64,7 @@ async function loadProjects(selected) {
   return projects;
 }
 async function selectProject(pid) {
+  $('#director-settings').close();
   revision++; clearTimeout(refreshTimer); ctx.agent.close(); ctx.state=empty(); ctx.state.pid=pid; runPending=false;
   ctx.studio.reset(); $('#project-select').value=pid; persist('kepu.pid',pid); $('#rerun-stage').value='ingest'; render();
   if(pid) { await ctx.refresh(); ctx.agent.connect(); }
@@ -75,17 +79,45 @@ $('#open-film').addEventListener('click',()=>window.open(fileURL(ctx.state.pid,'
 $('#generate').addEventListener('click',()=>run().catch(e=>toast(e.message)));
 $('#rerun').addEventListener('click',()=>run($('#rerun-stage').value).catch(e=>toast(e.message)));
 $('#render-mode').addEventListener('change',async event=>{
-  const mode=event.target.value,pid=ctx.state.pid;
+  const mode=event.target.value,pid=ctx.state.pid,previous=ctx.state.project?.render_mode;
+  const duration=Number(ctx.state.project?.target_s);
+  const body=mode==='scale_film'?{render_mode:mode,director_recipe:'scale',target_s:duration>=15 && duration<=30?duration:15}:{render_mode:mode};
   settingsPending=true;renderRun();
   try{
-    const project=await ctx.api('/settings',jsonOptions('PATCH',{render_mode:mode}));
+    const project=await ctx.api('/settings',jsonOptions('PATCH',body));
     if(pid!==ctx.state.pid)return;
-    ctx.state.project=project;$('#rerun-stage').value='render';
-    toast('画面风格已保存，请从渲染阶段重跑');
+    const replan=mode==='scale_film' || previous==='scale_film';
+    ctx.state.project=project;$('#rerun-stage').value=replan?'plan':'render';
+    toast(mode==='scale_film'?`已选择 ${body.target_s} 秒主梁尺度短片，请从分镜规划生成`:replan?'画面风格已保存，请从分镜规划重跑':'画面风格已保存，请从渲染阶段重跑');
   }catch(error){toast(error.message);}
-  finally{settingsPending=false;renderRun();}
+  finally{settingsPending=false;render();}
 });
 $('#project-select').addEventListener('change',event=>selectProject(event.target.value).catch(e=>toast(e.message)));
+$('#director-settings-open').addEventListener('click',()=>{
+  const scaleFilm=ctx.state.project?.render_mode==='scale_film';
+  for(const option of $('#director-recipe').options) option.disabled=scaleFilm && !['scale','auto'].includes(option.value);
+  $('#director-duration').min=scaleFilm?'15':'10';
+  $('#director-duration').max=scaleFilm?'30':'120';
+  $('#director-guidance').textContent=scaleFilm?'尺度短片支持15–30秒的主梁长度讲解。参数需有出处，整机尺寸需能生成有效模型；保存后从分镜规划重跑。':'15秒建议聚焦一个重点。保存后从分镜规划重跑，已人工确认的镜头保留。';
+  $('#director-recipe').value=ctx.state.project?.director_recipe || 'off';
+  $('#director-duration').value=ctx.state.project?.target_s ?? 45;
+  $('#director-settings-error').textContent='';
+  $('#director-settings').showModal();
+});
+$('#director-settings-close').addEventListener('click',()=>$('#director-settings').close());
+$('#director-form').addEventListener('submit',async event=>{
+  event.preventDefault();
+  if(settingsPending || ctx.isRunning() || !ctx.state.pid)return;
+  const pid=ctx.state.pid,body={director_recipe:$('#director-recipe').value,target_s:Number($('#director-duration').value)};
+  settingsPending=true;$('#director-settings-save').disabled=true;renderRun();
+  try{
+    const project=await ctx.api('/settings',jsonOptions('PATCH',body));
+    if(pid!==ctx.state.pid)return;
+    ctx.state.project=project;$('#rerun-stage').value='plan';$('#director-settings').close();
+    toast('讲解方式已保存，请从分镜规划重跑');
+  }catch(error){$('#director-settings-error').textContent=error.message;}
+  finally{settingsPending=false;$('#director-settings-save').disabled=false;render();}
+});
 let seeding=false;
 document.addEventListener('click',event=>{
   const button=event.target.closest('[data-action]'); if(!button) return;
@@ -116,6 +148,6 @@ setInterval(async()=>{
 window.addEventListener('pagehide',()=>ctx.agent.close());
 render();
 try {
-  const saved=stored('kepu.pid'), projects=await loadProjects(saved);
+  const saved=new URLSearchParams(location.search).get('project') || stored('kepu.pid'), projects=await loadProjects(saved);
   if(saved && projects.some(p=>p.id===saved)) await selectProject(saved);
 } catch(error) { toast(error.message); }

@@ -15,18 +15,23 @@ from typing import Any
 SKILL = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SKILL / 'scripts'))
 from compute_analogy import compute
+from claim_rules import visible_texts
+from accuracy_rules import traceability
 from resolve_text import PLACEHOLDER
 from skill_io import read_json, write_json
+sys.path.insert(0, str(SKILL / "evals"))
+from eval_support import select_cases, run_ids, run_folder, summarize
 
 
 def fact_references(shotlist: dict) -> set[str]:
     references = {a['fact'] for a in shotlist.get('analogies', [])}
     for shot in shotlist['shots']:
         references.update(shot.get('fact_refs', []))
-        references.update(p for p in PLACEHOLDER.findall(shot.get('narration', '')) if p.startswith('F_'))
+        references.update(p for _, text in visible_texts(shot) for p in PLACEHOLDER.findall(text) if p.startswith('F_'))
         references.update(shot.get('params', {}).get('facts', []))
         if shot.get('params', {}).get('fact'):
             references.add(shot['params']['fact'])
+    references.update(p for p in PLACEHOLDER.findall(shotlist.get('title', '')) if p.startswith('F_'))
     return references
 
 
@@ -66,6 +71,26 @@ def assertion_passes(assertion: dict, shotlist: dict, report: dict, facts: dict,
         return assertion['fact'] in delivery and any(word in delivery for word in ('待确认', '人工确认', '未确认', '待核实'))
     if kind == 'no_code_prefix':
         return not any(i['code'].startswith(assertion['prefix']) for i in issues)
+    if kind == 'report_terms':
+        return any(t in delivery for t in assertion['terms']) and any(t in delivery for t in assertion['reason_terms'])
+    if kind == 'required_facts':
+        return set(assertion['facts']) <= fact_references(shotlist)
+    if kind == 'preserve':
+        original = read_json(SKILL / 'evals/fixtures' / assertion['original'])
+        by_id = {s['id']: s for s in shots}
+        locked = [s for s in original['shots'] if s.get('human_edited') or s.get('review', {}).get('status') == 'approved']
+        return bool(locked) and all(s['id'] in by_id and all(by_id[s['id']].get(k) == s.get(k)
+            for k in s if k not in {'narration_resolved'}) for s in locked)
+    if kind in {'no_terms', 'chinese'}:
+        import re
+        from resolve_text import resolve_shots
+        lines = [s['narration_resolved'] for s in resolve_shots(facts, shotlist)['shots']]
+        if kind == 'no_terms':
+            lines += [str(s.get('params', {})) for s in shots] + [shotlist.get('title', '')]
+            return not any(term in line for line in lines for term in assertion['terms'])
+        return all(re.search(r'[\u4e00-\u9fff]', line) and not re.search(r'[A-Za-z]{3,}', line) for line in lines)
+    if kind == 'graphic_without_model':
+        return all(s['source'] == 'graphic' for s in shots if s['kind'] in {'title', 'outro', 'data_card'}) and all(s['source'] != 'model' for s in shots)
     raise ValueError(f"未知断言类型：{kind}")
 
 
@@ -88,6 +113,9 @@ def grade(case: dict, folder: Path, runner: Any = None) -> dict:
         summary.update(block=report['counts']['block'], warn=report['counts']['warn'], status='已评分')
         delivery = (folder / 'delivery-report.md').read_text(encoding='utf-8') if (folder / 'delivery-report.md').exists() else ''
         facts, assets = read_json(fixture / 'facts.json'), read_json(fixture / 'assets.json')
+        summary['traceability'] = traceability(facts, shotlist, assets, report['issues'])
+        summary['traceability_rate'] = summary['traceability']['rate']
+        summary['traceability_passed'] = summary['traceability_rate'] == 1 and not report.get('input_errors')
         for assertion in case['assertions']:
             try:
                 passed = assertion_passes(assertion, shotlist, report, facts, assets, delivery)
@@ -95,7 +123,8 @@ def grade(case: dict, folder: Path, runner: Any = None) -> dict:
             except (KeyError, ValueError, TypeError, AttributeError) as exc:
                 passed, error = False, f'断言输入无效：{exc}'
             summary['assertions'].append({'id': assertion['id'], 'passed': passed, 'error': error})
-    except (OSError, ValueError, KeyError, subprocess.TimeoutExpired) as exc:
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, subprocess.TimeoutExpired) as exc:
+        summary['status'] = '失败'
         summary['error'] = str(exc)
         summary['assertions'] = [{'id': a['id'], 'passed': False} for a in case['assertions']]
     status_path = folder / 'run-status.json'
@@ -126,7 +155,7 @@ def run_case(case: dict, group: str, destination: Path, timeout: int, runner: An
             for name in ('scripts', 'references'):
                 shutil.copytree(SKILL / name, skill_copy / name, ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
         prompt = case['prompt'] + '''
-请只使用当前工作目录提供的 facts.json、assets.json、project.json、rig.json、brief.md。
+请只使用当前工作目录提供的 facts.json、assets.json、project.json、rig.json、brief.md，以及已有 shotlist.json（若提供）。
 不要联网、修改输入参数或读取其他项目。交付 shotlist.json 和中文 delivery-report.md。
 分镜格式：顶层 version=1、title、fps=30、width=1920、height=1080、shots、analogies。
 每镜头字段：id、kind、source、duration_s、narration、fact_refs、analogy_refs、asset_refs、params、review:{status:"pending",note:""}。
@@ -175,42 +204,60 @@ kind 支持 title/model_orbit/analogy/motion/exploded/data_card/real_media/ai_br
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description='真实模型双组评测；默认新建下一轮，不覆盖旧结果。')
+    parser = argparse.ArgumentParser(description='真实模型双组评测；每组默认三次，自动盲评并生成离线报告。')
     parser.add_argument('--iteration', type=int, help='指定正整数轮次，已存在时拒绝覆盖')
     parser.add_argument('--timeout', type=int, default=900, help='每次模型调用超时秒数')
-    parser.add_argument('--score-only', type=Path, help='仅重新评分既有 iteration 目录，不调用模型')
+    parser.add_argument('--runs', type=int, default=3, help='每场景每组次数，默认 3')
+    parser.add_argument('--only', help='仅运行指定场景名')
+    parser.add_argument('--score-only', type=Path, help='仅评分既有轮次目录；盲评只读缓存，不调用模型')
     args = parser.parse_args(argv)
-    cases = read_json(SKILL / 'evals/evals.json')['evals']
-    if args.score_only:
-        output = args.score_only.resolve()
-        if not output.is_dir():
-            parser.error('评分目录不存在')
-    else:
-        workspace = SKILL / 'evals/workspace'
-        existing = [int(p.name.split('-')[-1]) for p in workspace.glob('iteration-*') if p.name.split('-')[-1].isdigit()]
-        iteration = args.iteration if args.iteration is not None else max(existing, default=0) + 1
-        if iteration < 1 or args.timeout <= 0:
-            parser.error('轮次和超时必须为正数')
-        output = workspace / f'iteration-{iteration}'
-        output.mkdir(parents=True, exist_ok=False)
-    rows = ['# 分镜技能对照评测', '', '真实模型结果以本轮日志为准；断言使用固定原始夹具评分，未执行或调用失败不得记为通过。', '',
-            '| 场景 | 组别 | 状态 | block | warn | 断言通过率 |', '|---|---|---|---:|---:|---:|']
-    results = []
+    try:
+        cases = select_cases(args.only)
+        if args.runs < 1 or args.timeout < 1:
+            raise ValueError('运行次数与超时须为正数')
+        if args.score_only:
+            output = args.score_only.resolve()
+            if not output.is_dir():
+                raise ValueError('评分目录不存在')
+        else:
+            workspace = SKILL / 'evals/workspace'
+            existing = [int(p.name.split('-')[-1]) for p in workspace.glob('iteration-*') if p.name.split('-')[-1].isdigit()]
+            iteration = args.iteration if args.iteration is not None else max(existing, default=0) + 1
+            if iteration < 1:
+                raise ValueError('轮次必须为正数')
+            output = workspace / f'iteration-{iteration}'
+            output.mkdir(parents=True, exist_ok=False)
+            write_json(output / 'run-manifest.json', {'cases': {c['name']: args.runs for c in cases}})
+    except (OSError, ValueError) as exc:
+        parser.error(str(exc))
+    failed = False
     for case in cases:
+        ids = run_ids(output, case['name']) if args.score_only else range(1, args.runs + 1)
+        if args.score_only:
+            manifest = read_json(output / 'run-manifest.json') if (output / 'run-manifest.json').exists() else {}
+            expected = manifest.get('cases', {}).get(case['name'], 0)
+            ids = sorted(set(ids) | set(range(1, expected + 1)))
+            if not ids:
+                if args.only:
+                    parser.error('指定场景没有既有运行')
+                continue
         for group in ('with_skill', 'without_skill'):
-            folder = output / case['name'] / group
-            if args.score_only:
-                folder.mkdir(parents=True, exist_ok=True)
-                summary = grade(case, folder)
-            else:
-                print(f"正在评测 {case['name']} / {group}", flush=True)
-                summary = run_case(case, group, folder, args.timeout)
-            results.append({'case': case['name'], 'group': group, **deepcopy(summary)})
-            rows.append(f"| {case['name']} | {group} | {summary['status']} | {summary['block'] if summary['block'] is not None else '未完成'} | {summary['warn'] if summary['warn'] is not None else '未完成'} | {summary['assertion_rate']:.0%} |")
-            (output / 'benchmark.md').write_text('\n'.join(rows) + '\n', encoding='utf-8')
-    write_json(output / 'benchmark.json', results)
-    print(f'评测已保存：{output / "benchmark.md"}')
-    return 1 if any(r['status'] != '已评分' for r in results) else 0
+            for run in ids:
+                folder = run_folder(output, case['name'], group, run)
+                print(f"正在评测 {case['name']} / {group} / 第 {run} 次", flush=True)
+                if args.score_only:
+                    folder.mkdir(parents=True, exist_ok=True)
+                    result = grade(case, folder)
+                else:
+                    result = run_case(case, group, folder, args.timeout)
+                failed |= result['status'] != '已评分'
+        summarize(output)
+    from judge import evaluate
+    from report import generate
+    failed |= not evaluate(output, cases, score_only=bool(args.score_only), timeout=args.timeout)
+    generate(output)
+    print(f'评测已保存：{output / "report.html"}')
+    return int(failed)
 
 
 if __name__ == '__main__':

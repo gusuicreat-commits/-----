@@ -1,0 +1,115 @@
+{
+  "independent_review": "Aster 独立构造并执行，合成测试，不是真实模型评测",
+  "cases": [
+    {
+      "case": "错误量纲",
+      "text": "跨度{{F_rated_load}}。",
+      "support": "F_rated_load",
+      "expected_supported": false,
+      "issues": [
+        {
+          "id": "I1",
+          "shot": "S1",
+          "severity": "block",
+          "code": "UNSUPPORTED_CLAIM",
+          "message": "参数引用不能支撑附带的用途、结构或错误参数名称",
+          "hint": "提供已核验文字事实或有效素材；删除无依据的具体陈述",
+          "field": "claims/narration",
+          "fix": "镜头 S1 的 claims/narration：为每句陈述提供有效事实或素材依据，具体陈述不得标为 generic。触发内容：参数引用不能支撑附带的用途、结构或错误参数名称"
+        }
+      ],
+      "actual_supported": [
+        false
+      ],
+      "passed": true
+    },
+    {
+      "case": "无关事实",
+      "text": "采用箱形主梁。",
+      "support": "F_rated_load",
+      "expected_supported": false,
+      "issues": [
+        {
+          "id": "I1",
+          "shot": "S1",
+          "severity": "block",
+          "code": "UNSUPPORTED_CLAIM",
+          "message": "文字陈述无法与所引用事实原文对齐，需人工核对",
+          "hint": "提供已核验文字事实或有效素材；删除无依据的具体陈述",
+          "field": "claims/narration",
+          "fix": "镜头 S1 的 claims/narration：为每句陈述提供有效事实或素材依据，具体陈述不得标为 generic。触发内容：文字陈述无法与所引用事实原文对齐，需人工核对"
+        }
+      ],
+      "actual_supported": [
+        false
+      ],
+      "passed": true
+    },
+    {
+      "case": "无关素材",
+      "text": "采用箱形主梁。",
+      "support": "IMG_test",
+      "expected_supported": false,
+      "issues": [
+        {
+          "id": "I1",
+          "shot": "S1",
+          "severity": "block",
+          "code": "UNSUPPORTED_CLAIM",
+          "message": "文字陈述无法与素材标题或标签对齐，需人工核对",
+          "hint": "提供已核验文字事实或有效素材；删除无依据的具体陈述",
+          "field": "claims/narration",
+          "fix": "镜头 S1 的 claims/narration：为每句陈述提供有效事实或素材依据，具体陈述不得标为 generic。触发内容：文字陈述无法与素材标题或标签对齐，需人工核对"
+        }
+      ],
+      "actual_supported": [
+        false
+      ],
+      "passed": true
+    },
+    {
+      "case": "自报通用事实",
+      "text": "这台设备采用磁悬浮结构。",
+      "support": "generic",
+      "expected_supported": false,
+      "issues": [
+        {
+          "id": "I1",
+          "shot": "S1",
+          "severity": "block",
+          "code": "UNSUPPORTED_CLAIM",
+          "message": "通用陈述含具体实体、数字或引用，必须提供出处",
+          "hint": "提供已核验文字事实或有效素材；删除无依据的具体陈述",
+          "field": "claims/narration",
+          "fix": "镜头 S1 的 claims/narration：为每句陈述提供有效事实或素材依据，具体陈述不得标为 generic。触发内容：通用陈述含具体实体、数字或引用，必须提供出处"
+        }
+      ],
+      "actual_supported": [
+        false
+      ],
+      "passed": true
+    },
+    {
+      "case": "正确数值",
+      "text": "额定起重量{{F_rated_load}}。",
+      "support": "F_rated_load",
+      "expected_supported": true,
+      "issues": [],
+      "actual_supported": [
+        true
+      ],
+      "passed": true
+    },
+    {
+      "case": "正确文字事实",
+      "text": "采用箱形主梁。",
+      "support": "F_structure",
+      "expected_supported": true,
+      "issues": [],
+      "actual_supported": [
+        true
+      ],
+      "passed": true
+    }
+  ]
+}

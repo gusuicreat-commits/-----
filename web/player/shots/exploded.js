@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {ease,labelNodes,frameParallel,partBounds,projectBounds,projectPoint} from './common.js';
+import {ease,labelNodes,frameParallel,partBounds,projectBounds,projectPoint,editorialLabels} from './common.js';
 import {hudSafeArea} from './layout.js';
 export {setup} from './common.js';
 export function renderBackground(ctx,shot,t,pointSource){
@@ -63,10 +63,7 @@ export function render(ctx,shot,t,dur){
   trolley.position.copy(trolley.parent?trolley.parent.worldToLocal(target):target);
  }
  fit();
- labelNodes(ctx,[...new Set([...(p.parts||[]),...(cab?['cab']:[])])],{splitSides:true,safe});
- for(const id of ['hoist_hook','trolley']){
-  const n=ctx.model.getObjectByName(id);if(!n)continue;
-  const point=projectPoint(ctx,partBounds(n).getCenter(new THREE.Vector3()));
-  ctx.labels.innerHTML+=`<circle class="part-highlight" data-highlight="${id}" cx="${point.x}" cy="${point.y}" r="22"/>`;
- }
+ const sequence=[...new Set([...(p.parts||[]),...(cab?['cab']:[])])],phase=Math.min(Math.ceil(sequence.length/2)-1,Math.floor(t/dur*Math.ceil(sequence.length/2)));
+ editorialLabels(ctx,sequence.slice(phase*2,phase*2+2));
+
 }

@@ -1,9 +1,11 @@
-import {orbit,clamp,esc,source} from './common.js';
+import * as THREE from 'three';
+import {cameraArc,cameraEase} from '../camera.js';
+import {clamp,esc,source} from './common.js';
 export {setup} from './common.js';
 export function render(ctx,shot,t,dur){
- if(!shot.bg){const target=ctx.center.clone();target.x-=27;orbit(ctx,-8+t/dur*10,16,1.48,target);}
+ if(!shot.bg){const u=cameraEase(t/dur),scale=(ctx.size?.y||ctx.center.y*2||51)/51;cameraArc(ctx,{angle:-28+u*4,elevation:0,distance:205*scale,target:new THREE.Vector3(5,24,0).multiplyScalar(scale),fov:36,screenX:.66,screenY:.55});}
  const facts=(shot.params.facts||[]).map(id=>ctx.timeline.facts[id]).filter(Boolean);
- ctx.content.innerHTML=`<div class="data-panel${facts.length>=4?' data-grid':''}" data-count="${facts.length}"><h2>关键参数</h2><div class="data-items">${facts.map((f,i)=>`<div class="data-card" style="opacity:${clamp((t-i*.3)/.45)}"><div class="name">${esc(f.name)}</div><div class="data-value"><span class="value">${esc(f.value)}</span><span class="unit">${esc(f.unit)}</span></div><div class="source">${source(f)}</div></div>`).join('')}</div></div>`;
+ ctx.content.innerHTML=`<div class="data-panel${facts.length>=4?' data-grid':''}" data-count="${facts.length}"><h2>尺度与能力</h2><div class="data-items">${facts.map((f,i)=>`<div class="data-card" style="opacity:${clamp((t-i*.3)/.45)}"><div class="name">${esc(f.name)}</div><div class="data-value"><span class="value">${esc(f.value)}</span><span class="unit">${esc(f.unit)}</span></div><div class="source">${source(f)}</div></div>`).join('')}</div></div>`;
 }
 // 字幕更新后测量，同样适用于乱序定位和两行字幕。
 export function fitPanel(content,caption){

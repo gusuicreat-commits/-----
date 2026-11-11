@@ -1,0 +1,243 @@
+(node:10276) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[2m[WebServer] [22m(node:10277) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 58 tests using 1 worker
+
+(node:10278) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:10278) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:10278) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 tests/player.spec.ts:13:1 › 所有资源就绪，时长正确 (593ms)
+  ✓   2 tests/player.spec.ts:14:1 › 十类镜头完整绘制且不是纯色 (4.6s)
+  ✓   3 tests/player.spec.ts:15:1 › 逐镜头重复定位与乱序定位保持像素确定性 (6.9s)
+  ✓   4 tests/player.spec.ts:16:1 › 角标、字幕、出处与镜头事件符合时间线 (523ms)
+  ✓   5 tests/player.spec.ts:18:1 › 预览可播放、暂停并拖动时间轴 (891ms)
+  ✓   6 tests/player.spec.ts:19:1 › 参照物、运动轴和创意配方分支均可定位 (2.5s)
+  ✓   7 tests/player.spec.ts:28:1 › 视频按时间定位，音频驱动预览时钟 (1.9s)
+  ✓   8 tests/player.spec.ts:42:1 › GLB节点层级和104×51×20米外包尺寸符合契约 (29ms)
+  ✓   9 tests/player.spec.ts:48:1 › 参照物实际几何尺寸与输入尺度一致 (14ms)
+  ✓  10 tests/player.spec.ts:55:1 › 吊钩离地高度与钢丝绳顶部锚点一致 (6ms)
+  ✓  11 tests/player.spec.ts:70:1 › 长度类比左端对齐、轨道外留六米且双物体位于安全区 (46ms)
+  ✓  12 tests/player.spec.ts:93:1 › 高度类比与支腿并排、同地面且标注双高度 (6ms)
+  ✓  13 tests/player.spec.ts:108:1 › T23开场透视整机清晰并留左上标题空间 (6ms)
+  ✓  14 tests/player.spec.ts:114:1 › 开场双分辨率文字与模型投影不相交 (873ms)
+  ✓  15 tests/player.spec.ts:129:1 › 焊缝等比对照标签位于圆柱下方 (522ms)
+  ✓  16 tests/player.spec.ts:138:1 › 创意粒子画布位于文字层下方 (476ms)
+  ✓  17 tests/player.spec.ts:193:1 › 飞机有可见实体投影、翼展沿x且与尺寸端点一致 (5ms)
+  ✓  18 tests/player.spec.ts:209:1 › 焊缝头发丝沿z轴躺倒、细长且并排宽度匹配尺寸线 (9ms)
+  ✓  19 tests/player.spec.ts:228:1 › 类比HTML标签清晰且高度标签在左右两侧不相交 (2.4s)
+  ✓  20 tests/player.spec.ts:258:1 › 类比尺寸新单位与旧数据默认值一致 (1ms)
+  ✓  21 tests/player.spec.ts:265:1 › 楼房窗片与墙面分离且残余楼层窗片不相互交叠 (807ms)
+  ✓  22 tests/player.spec.ts:277:1 › 飞机在轨道外侧落地且机身沿z轴无交叉 (3ms)
+  ✓  23 tests/player.spec.ts:289:1 › 钢板错边等于参数且尺寸线端点对应表面高度差 (4ms)
+  ✓  24 tests/player.spec.ts:305:1 › 旧头发丝字段不再生成巨型圆柱 (2ms)
+  ✘  25 tests/player.spec.ts:313:1 › 焊缝文字参数卡与模型及尺寸标签在双分辨率下互不重叠 (519ms)
+(node:10545) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:10545) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:10545) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  26 tests/player.spec.ts:342:1 › 实拍标题去前缀不折词且署名紧邻字幕上方 (2.8s)
+  ✓  27 tests/player.spec.ts:374:1 › 参数面板与类比镜头不再重复显示数字卡且切镜恢复 (531ms)
+  ✓  28 tests/player.spec.ts:380:1 › 类比尺寸新排版的所有线段与标签、小车投影分离 (60ms)
+  ✓  29 tests/player.spec.ts:403:1 › 高度类比与零地面对齐且顶端包含小车外包 (4ms)
+  ✓  30 tests/player.spec.ts:444:1 › T23分解逐项短引线锚定实际部件且不交叉 (15ms)
+  ✓  31 tests/player.spec.ts:455:1 › GLB节点司机室随刚性腿移动且兼容父子层级和显式拆分列表 (20ms)
+  ✓  32 tests/player.spec.ts:473:1 › GLB节点引线绕开其他部件矩形且避线算法处理斜线 (1ms)
+  ✓  33 tests/player.spec.ts:482:1 › 实拍署名保留作者许可且来源链接只展示域名 (2ms)
+  ✓  34 tests/player.spec.ts:489:1 › 所有镜头眉题清晰可见并位于画布安全区 (619ms)
+  ✓  35 tests/player.spec.ts:504:1 › 爆炸镜头实际标签无引线交叉且避开标题字幕 (993ms)
+  ✓  36 tests/player.spec.ts:548:1 › 安全区按实际HUD矩形换算画布坐标并同步当前字幕 (9ms)
+  ✓  37 tests/player.spec.ts:560:1 › S2高度尺寸线和中点标签及整体投影均在HUD安全区 (585ms)
+  ✘  38 tests/player.spec.ts:586:1 › 爆炸小车本体Box3中心锚点与主梁分离且间距至少24像素 (4ms)
+(node:10576) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:10576) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:10576) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  39 tests/player.spec.ts:609:1 › S2双分辨率真实HUD避让与中点标签在乱序定位后保持一致 (625ms)
+(node:10589) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:10589) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:10589) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  40 tests/player.spec.ts:660:1 › T13c分解联合投影占宽60至70且逐项标注完整可见 (17ms)
+(node:10590) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:10590) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:10590) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  41 tests/player.spec.ts:685:1 › T13地面覆盖远裁剪范围且平移不改变世界网格定位 (17ms)
+  ✘  42 tests/player.spec.ts:705:1 › T13b三维镜头背景列保留主体安全区且天空无人工渐变硬边 (625ms)
+(node:10606) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:10606) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:10606) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  43 tests/player.spec.ts:757:1 › T13分解短标注在双分辨率下清晰且切镜恢复轨道 (1.2s)
+  ✓  44 tests/player.spec.ts:773:1 › T13c保留T12斜俯视并收紧分解位移且主梁净空至少6米 (168ms)
+  ✘  45 tests/player.spec.ts:807:1 › T13b背景采样竖条不包含模型或类比参照物 (4ms)
+(node:10619) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:10619) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:10619) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  46 tests/player.spec.ts:820:1 › T16写实背景帧锚点与网页三维切换保持确定性 (535ms)
+  ✓  47 tests/player.spec.ts:856:1 › 写实爆炸背景引线终点精确使用表面锚点且就近放置 (795ms)
+  ✓  48 tests/player.spec.ts:909:2 › standard模式2项参数卡完整容纳项目且位于字幕上方 (939ms)
+  ✓  49 tests/player.spec.ts:909:2 › standard模式3项参数卡完整容纳项目且位于字幕上方 (976ms)
+  ✓  50 tests/player.spec.ts:909:2 › standard模式4项参数卡完整容纳项目且位于字幕上方 (1.0s)
+  ✓  51 tests/player.spec.ts:909:2 › photoreal模式2项参数卡完整容纳项目且位于字幕上方 (713ms)
+  ✓  52 tests/player.spec.ts:909:2 › photoreal模式3项参数卡完整容纳项目且位于字幕上方 (794ms)
+  ✓  53 tests/player.spec.ts:909:2 › photoreal模式4项参数卡完整容纳项目且位于字幕上方 (832ms)
+  ✘  54 tests/player.spec.ts:948:1 › 缺少写实帧时回退晴天，焊缝切换后恢复且标准默认画面一致 (1.4s)
+(node:10662) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:10662) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:10662) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  55 tests/player.spec.ts:969:1 › 参数卡与片尾背景切换恢复亮度且片尾保留标题 (395ms)
+  ✓  56 tests/player.spec.ts:984:1 › 写实片尾副标题和来源在浅色天空上的像素对比度至少4.5 (897ms)
+  ✓  57 tests/player.spec.ts:1045:61 › T19写实类比height尺寸线与帧锚点一致 (340ms)
+  ✓  58 tests/player.spec.ts:1045:61 › T19写实类比length尺寸线与帧锚点一致 (362ms)
+
+
+  1) tests/player.spec.ts:313:1 › 焊缝文字参数卡与模型及尺寸标签在双分辨率下互不重叠 ────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32mfalse[39m
+    Received: [31mtrue[39m
+
+      333 |    for(const label of await page.locator('#labels .label-background').all()){
+      334 |     await expect(label).toHaveCSS('fill','rgb(17, 26, 36)');
+    > 335 |     const rect=(await label.boundingBox())!;expect(rectanglesOverlap(card!,rect)).toBe(false);expect(rectanglesOverlap(text,rect)).toBe(false);
+          |                                                                                   ^
+      336 |     expect(rect.y+rect.height).toBeLessThan(stage.y+stage.height*.82);
+      337 |    }
+      338 |   }
+        at /Users/mac/Desktop/AI入企黑客松/科普视频智能体/web/tests/player.spec.ts:335:83
+
+    Error Context: test-results/T23-aster-player-final/player-焊缝文字参数卡与模型及尺寸标签在双分辨率下互不重叠/error-context.md
+
+  2) tests/player.spec.ts:586:1 › 爆炸小车本体Box3中心锚点与主梁分离且间距至少24像素 ─────────────────────────────────────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeGreaterThanOrEqual[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: >= [32m273.99999[39m
+    Received:    [31m230[39m
+
+      543 | };
+      544 | function expectInside(rect,safe){
+    > 545 |  expect(rect.x).toBeGreaterThanOrEqual(safe.x-1e-5);expect(rect.y).toBeGreaterThanOrEqual(safe.y-1e-5);
+          |                                                                    ^
+      546 |  expect(rect.x+rect.width).toBeLessThanOrEqual(safe.x+safe.width+1e-5);expect(rect.y+rect.height).toBeLessThanOrEqual(safe.y+safe.height+1e-5);
+      547 | }
+      548 | test('安全区按实际HUD矩形换算画布坐标并同步当前字幕',async()=>{
+        at expectInside (/Users/mac/Desktop/AI入企黑客松/科普视频智能体/web/tests/player.spec.ts:545:68)
+        at /Users/mac/Desktop/AI入企黑客松/科普视频智能体/web/tests/player.spec.ts:603:29
+
+  3) tests/player.spec.ts:609:1 › S2双分辨率真实HUD避让与中点标签在乱序定位后保持一致 ─────────────────────────────────────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeGreaterThanOrEqual[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: >= [32m1043.99999[39m
+    Received:    [31m506.703125[39m
+
+      543 | };
+      544 | function expectInside(rect,safe){
+    > 545 |  expect(rect.x).toBeGreaterThanOrEqual(safe.x-1e-5);expect(rect.y).toBeGreaterThanOrEqual(safe.y-1e-5);
+          |                                                                    ^
+      546 |  expect(rect.x+rect.width).toBeLessThanOrEqual(safe.x+safe.width+1e-5);expect(rect.y+rect.height).toBeLessThanOrEqual(safe.y+safe.height+1e-5);
+      547 | }
+      548 | test('安全区按实际HUD矩形换算画布坐标并同步当前字幕',async()=>{
+        at expectInside (/Users/mac/Desktop/AI入企黑客松/科普视频智能体/web/tests/player.spec.ts:545:68)
+        at /Users/mac/Desktop/AI入企黑客松/科普视频智能体/web/tests/player.spec.ts:639:29
+
+    Error Context: test-results/T23-aster-player-final/player-S2双分辨率真实HUD避让与中点标签在乱序定位后保持一致/error-context.md
+
+  4) tests/player.spec.ts:660:1 › T13c分解联合投影占宽60至70且逐项标注完整可见 ───────────────────────────────────────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeGreaterThanOrEqual[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: >= [32m261.99999[39m
+    Received:    [31m230[39m
+
+      543 | };
+      544 | function expectInside(rect,safe){
+    > 545 |  expect(rect.x).toBeGreaterThanOrEqual(safe.x-1e-5);expect(rect.y).toBeGreaterThanOrEqual(safe.y-1e-5);
+          |                                                                    ^
+      546 |  expect(rect.x+rect.width).toBeLessThanOrEqual(safe.x+safe.width+1e-5);expect(rect.y+rect.height).toBeLessThanOrEqual(safe.y+safe.height+1e-5);
+      547 | }
+      548 | test('安全区按实际HUD矩形换算画布坐标并同步当前字幕',async()=>{
+        at expectInside (/Users/mac/Desktop/AI入企黑客松/科普视频智能体/web/tests/player.spec.ts:545:68)
+        at /Users/mac/Desktop/AI入企黑客松/科普视频智能体/web/tests/player.spec.ts:674:30
+
+  5) tests/player.spec.ts:705:1 › T13b三维镜头背景列保留主体安全区且天空无人工渐变硬边 ─────────────────────────────────────
+
+    Error: model_orbit 右侧背景列被模型侵入
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBeLessThanOrEqual[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: <= [32m1766.4[39m
+    Received:    [31m1814.3999999999996[39m
+
+      724 |     const r=visibleModelRect({...ctx,model:object});
+      725 |     expect(r.x,`${kind} 左侧背景列被模型侵入`).toBeGreaterThanOrEqual(1920*.08);
+    > 726 |     expect(r.x+r.width,`${kind} 右侧背景列被模型侵入`).toBeLessThanOrEqual(1920*.92);
+          |                                              ^
+      727 |    }
+      728 |    const data=await page.locator('#scene').evaluate((canvas:HTMLCanvasElement)=>canvas.toDataURL('image/png'));
+      729 |    const buffer=Buffer.from(data.split(',')[1],'base64');
+        at /Users/mac/Desktop/AI入企黑客松/科普视频智能体/web/tests/player.spec.ts:726:46
+
+    Error Context: test-results/T23-aster-player-final/player-T13b三维镜头背景列保留主体安全区且天空无人工渐变硬边/error-context.md
+
+  6) tests/player.spec.ts:807:1 › T13b背景采样竖条不包含模型或类比参照物 ────────────────────────────────────────────
+
+    Error: model_orbit 右侧背景列被模型侵入
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBeLessThanOrEqual[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: <= [32m1766.4[39m
+    Received:    [31m1814.3999999999996[39m
+
+      813 |    const r=visibleModelRect({...ctx,model:object});
+      814 |    expect(r.x,`${kind} 左侧背景列被模型侵入`).toBeGreaterThanOrEqual(1920*.08);
+    > 815 |    expect(r.x+r.width,`${kind} 右侧背景列被模型侵入`).toBeLessThanOrEqual(1920*.92);
+          |                                             ^
+      816 |   }
+      817 |  }
+      818 | });
+        at /Users/mac/Desktop/AI入企黑客松/科普视频智能体/web/tests/player.spec.ts:815:45
+
+  7) tests/player.spec.ts:948:1 › 缺少写实帧时回退晴天，焊缝切换后恢复且标准默认画面一致 ──────────────────────────────────────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeGreaterThan[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: > [32m131[39m
+    Received:   [31m117[39m
+
+      963 |  }
+      964 |  expect(colors.standard).toEqual(colors.default);
+    > 965 |  const [r,,b]=colors.standard;expect(b).toBeGreaterThan(r+8);
+          |                                         ^
+      966 |  expect(colors.photoreal).toEqual(colors.standard);
+      967 | });
+      968 |
+        at /Users/mac/Desktop/AI入企黑客松/科普视频智能体/web/tests/player.spec.ts:965:41
+
+    Error Context: test-results/T23-aster-player-final/player-缺少写实帧时回退晴天，焊缝切换后恢复且标准默认画面一致/error-context.md
+
+  7 failed
+    tests/player.spec.ts:313:1 › 焊缝文字参数卡与模型及尺寸标签在双分辨率下互不重叠 ─────────────────────────────────────────
+    tests/player.spec.ts:586:1 › 爆炸小车本体Box3中心锚点与主梁分离且间距至少24像素 ──────────────────────────────────────
+    tests/player.spec.ts:609:1 › S2双分辨率真实HUD避让与中点标签在乱序定位后保持一致 ──────────────────────────────────────
+    tests/player.spec.ts:660:1 › T13c分解联合投影占宽60至70且逐项标注完整可见 ────────────────────────────────────────
+    tests/player.spec.ts:705:1 › T13b三维镜头背景列保留主体安全区且天空无人工渐变硬边 ──────────────────────────────────────
+    tests/player.spec.ts:807:1 › T13b背景采样竖条不包含模型或类比参照物 ─────────────────────────────────────────────
+    tests/player.spec.ts:948:1 › 缺少写实帧时回退晴天，焊缝切换后恢复且标准默认画面一致 ───────────────────────────────────────
+  51 passed (2.9m)

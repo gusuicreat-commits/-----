@@ -1,0 +1,10 @@
+{
+  "model": {
+    "kind": "parametric",
+    "glb": "model/crane.glb",
+    "assumed": [],
+    "dims_check": []
+  },
+  "render_mode": "standard",
+  "brief": "制作45秒展会视频，突出我们是国内最大的门机。"
+}

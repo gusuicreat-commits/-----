@@ -33,3 +33,5 @@ reference 素材保留「参考实拍 · 非本机」标签和 credit；不得�
 科普亲切、短句、一镜头讲清一个重点；展会强调可见结构；投标克制陈述参数和出处。
 不要无证据宣称「世界第一」「零误差」「绝对安全」，也不要把结构示意说成装配实拍。
 人工改过的台词，只改命中问题的词句；保留其他句子、语气与镜头 id。
+
+宣称与量纲规则见 [validation-codes.md](validation-codes.md) 和共享 [claim-rules.json](claim-rules.json)。先读 [copywriting.md](copywriting.md) 再起草；文采不能替代事实证据。

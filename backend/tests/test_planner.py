@@ -190,7 +190,7 @@ def test_planner_system_snapshot_and_photoreal_suffix(project, monkeypatch, mode
     pid = project['id']
     if mode is not None:
         storage.write_json(pid, 'project.json', {**project, 'render_mode':mode})
-    standard_hash = '0257a1475a8678283f6e394a2810c41b7d815ac62c55fcfd78078b9954d40a05'
+    standard_hash = '7e45e0c52c0cdf4d55649de3db7af1b2455f31ea5cd87b0dca7f89cef9df256a'
     base = planner.PLANNER_SYSTEM.replace('{target_s}', '45')
     assert hashlib.sha256(base.encode()).hexdigest() == standard_hash
     seen = []

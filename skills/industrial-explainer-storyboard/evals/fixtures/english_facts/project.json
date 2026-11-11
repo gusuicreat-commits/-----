@@ -1,0 +1,10 @@
+{
+  "model": {
+    "kind": "parametric",
+    "glb": "model/crane.glb",
+    "assumed": [],
+    "dims_check": []
+  },
+  "render_mode": "standard",
+  "brief": "英文参数表对应本设备，请制作45秒中文科普分镜，中文讲清额定起重量、跨度和起升速度，保留事实引用。"
+}

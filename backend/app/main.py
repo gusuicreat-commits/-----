@@ -18,7 +18,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app import config, events, storage
 from app.ingest.facts import FactPatch, extract_facts, update_fact
 from app.llm import LLMError
-from app.agent import orchestrator, planner
+from app.agent import orchestrator, planner, workflow
 from app.media.blender import blender_executable
 
 app = FastAPI(title="起重机科普视频智能体")
@@ -78,20 +78,29 @@ def get_projects() -> list[dict]:
 @app.get("/api/projects/{pid}")
 def get_project(pid: str) -> dict:
     project = storage.read_json(pid, "project.json")
+    from app.agent.scale_film import ready
     return {**project, "render_mode": project.get("render_mode", "standard"),
+            "scale_film_ready": ready(pid),
             "blender_available": blender_executable() is not None}
 
 
 class SettingsInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    render_mode: Literal["standard", "photoreal"]
+    render_mode: Literal["standard", "photoreal", "scale_film"] | None = None
+    director_recipe: Literal["off", "auto", "scale", "motion", "structure"] | None = None
+    target_s: float | None = Field(default=None, ge=10, le=120, allow_inf_nan=False)
 
 
 @app.patch("/api/projects/{pid}/settings")
+@workflow.project_mutation
 def patch_settings(pid: str, body: SettingsInput) -> dict:
     with storage.LOCK:
         project = storage.read_json(pid, "project.json")
-        project["render_mode"] = body.render_mode
+        for key, value in body.model_dump(exclude_none=True).items():
+            project[key] = value
+        if project.get("render_mode") == "scale_film":
+            from app.agent.scale_film import settings
+            settings(project)
         storage.write_json(pid, "project.json", project)
     return get_project(pid)
 
@@ -141,6 +150,7 @@ def save_upload(pid: str, folder: str, file: UploadFile) -> Path:
     return path
 
 
+@workflow.project_mutation
 def extract_background(pid: str, run: str, path: Path) -> None:
     try:
         extract_facts(pid, run, path)
@@ -150,6 +160,7 @@ def extract_background(pid: str, run: str, path: Path) -> None:
 
 
 @app.post("/api/projects/{pid}/docs")
+@workflow.project_mutation
 def upload_document(pid: str, background_tasks: BackgroundTasks, file: UploadFile = File(...),
                     sync: int = Query(0, ge=0, le=1)) -> dict:
     storage.project_dir(pid)
@@ -169,11 +180,13 @@ def get_facts(pid: str) -> dict:
 
 
 @app.patch("/api/projects/{pid}/facts/{fid}")
+@workflow.project_mutation
 def patch_fact(pid: str, fid: str, patch: FactPatch) -> dict:
     return update_fact(pid, fid, patch.model_dump(exclude_unset=True))
 
 
 @app.post("/api/projects/{pid}/assets")
+@workflow.project_mutation
 def upload_asset(pid: str, file: UploadFile = File(...), provenance: Literal["own", "reference"] = Form(...),
                  title: str = Form(""), tags: str = Form(""), credit: str = Form("")) -> dict:
     storage.project_dir(pid)
@@ -259,6 +272,7 @@ class ReviewInput(BaseModel):
 
 
 class ShotPatch(BaseModel):
+    duration_s: float | None = Field(default=None, gt=0, le=120, allow_inf_nan=False)
     model_config = ConfigDict(extra="forbid")
     narration: str | None = None
     params: dict | None = None
@@ -276,6 +290,7 @@ async def run_conflict_handler(request: object, exc: orchestrator.RunConflict) -
 
 
 @app.post("/api/projects/{pid}/model/step")
+@workflow.project_mutation
 def upload_step(pid: str, file: UploadFile = File(...)) -> dict:
     storage.project_dir(pid)
     if Path(file.filename or "").suffix.lower() not in {".step", ".stp"}:
@@ -285,6 +300,7 @@ def upload_step(pid: str, file: UploadFile = File(...)) -> dict:
 
 
 @app.post("/api/projects/{pid}/model/parametric")
+@workflow.project_mutation
 def create_parametric(pid: str) -> dict:
     return orchestrator.prepare_model(pid, next_run(pid))
 
@@ -299,6 +315,8 @@ def backend_url(request: Request) -> str:
 
 @app.post("/api/projects/{pid}/run")
 def run_project(pid: str, body: RunInput, request: Request) -> dict:
+    if storage.read_json(pid, "workflow.json") is not None:
+        raise orchestrator.RunConflict("此项目使用分镜预览流程，请确认当前方案后点击制作")
     return {"run": orchestrator.start_run(pid, from_stage=body.from_stage, force=body.force, base_url=backend_url(request))}
 
 
@@ -316,6 +334,7 @@ def get_shotlist(pid: str) -> dict:
 
 
 @app.patch("/api/projects/{pid}/shots/{sid}")
+@workflow.project_mutation
 def patch_shot(pid: str, sid: str, body: ShotPatch) -> dict:
     patch = body.model_dump(exclude_unset=True)
     if any(value is None for value in patch.values()):
@@ -326,7 +345,8 @@ def patch_shot(pid: str, sid: str, body: ShotPatch) -> dict:
             if shot["id"] == sid:
                 if "params" in patch:
                     patch["params"] = {**shot.get("params", {}), **patch["params"]}
-                if "narration" in patch or "params" in patch:
+                if any(key in patch for key in ("narration", "params", "duration_s")):
+                    shot["human_edited"] = True
                     shot.pop("narration_resolved", None)
                     shot["review"] = {"status": "pending", "note": ""}
                 shot.update(patch)
@@ -336,6 +356,7 @@ def patch_shot(pid: str, sid: str, body: ShotPatch) -> dict:
 
 
 @app.post("/api/projects/{pid}/shots/{sid}/revise")
+@workflow.project_mutation
 def revise_shot(pid: str, sid: str, body: RevisionInput) -> dict:
     data = storage.read_json(pid, "shotlist.json", {"shots": []})
     if not any(shot["id"] == sid for shot in data["shots"]):
@@ -356,6 +377,8 @@ def get_timeline(pid: str) -> dict:
 
 @app.get("/api/projects/{pid}/report")
 def get_report(pid: str) -> dict:
+    if storage.read_json(pid, "workflow.json") is not None and not workflow.status(pid)["can_download"]:
+        return {}
     return storage.read_json(pid, "report.json", {})
 
 
@@ -373,8 +396,55 @@ def static_file(root: Path, path: str, *, fallback: bool = False) -> FileRespons
     return FileResponse(target)
 
 
+class WorkflowBrief(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    brief: str = Field(min_length=1)
+    target_s: float = Field(default=30, ge=10, le=120, allow_inf_nan=False)
+    engine: Literal["threejs", "blender"] = "threejs"
+    content: Literal["auto", "scale", "motion", "structure"] = "auto"
+
+
+class WorkflowPreview(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    replan: bool = True
+
+
+class WorkflowProduce(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    plan_revision: str = Field(min_length=1)
+
+
+@app.get("/api/workflow/capabilities")
+def workflow_capabilities() -> dict:
+    return workflow.capabilities()
+
+
+@app.get("/api/projects/{pid}/workflow")
+def workflow_status(pid: str) -> dict:
+    return workflow.status(pid)
+
+
+@app.patch("/api/projects/{pid}/workflow/brief")
+def workflow_brief(pid: str, body: WorkflowBrief) -> dict:
+    return workflow.brief(pid, body.model_dump())
+
+
+@app.post("/api/projects/{pid}/workflow/preview")
+def workflow_preview(pid: str, body: WorkflowPreview) -> dict:
+    return workflow.start(pid, replan=body.replan)
+
+
+@app.post("/api/projects/{pid}/workflow/produce")
+def workflow_produce(pid: str, body: WorkflowProduce, request: Request) -> dict:
+    return workflow.start(pid, production=True, revision=body.plan_revision, base_url=backend_url(request))
+
+
 @app.get("/files/{pid}/{path:path}")
 def project_file(pid: str, path: str):
+    try:
+        workflow.assert_export(pid, path)
+    except ValueError as exc:
+        raise HTTPException(403, "不允许访问此路径") from exc
     return static_file(storage.project_dir(pid), path)
 
 

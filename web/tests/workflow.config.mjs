@@ -1,0 +1,3 @@
+import {fileURLToPath} from 'node:url';
+import {defineConfig} from '@playwright/test';
+export default defineConfig({testDir:'.',testMatch:'workflow.spec.ts',workers:1,timeout:30000,outputDir:'../test-results/T27-workflow',use:{baseURL:'http://127.0.0.1:18047',viewport:{width:1440,height:1000},headless:true,launchOptions:{executablePath:process.env.KEPU_CHROMIUM_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'}},webServer:{cwd:fileURLToPath(new URL('..',import.meta.url)),command:'python3 -m http.server 18047 --bind 127.0.0.1 --directory app',url:'http://127.0.0.1:18047/create.html',reuseExistingServer:false}});

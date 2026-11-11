@@ -182,7 +182,7 @@ def test_packaged_sample_and_six_errors(project, filename):
                       ('model/rig.json', rig), ('shotlist.json', shots)]:
         storage.write_json(pid, path, data)
     report = assert_parity(pid)
-    assert report['counts'] == ({'block': 5, 'warn': 1, 'info': 1} if filename == 'shotlist-errors.json' else {'block': 0, 'warn': 0, 'info': 1})
+    assert report['counts'] == ({'block': 5, 'warn': 1, 'info': 9} if filename == 'shotlist-errors.json' else {'block': 0, 'warn': 0, 'info': 9})
     assert not skill_io.schema_errors(shots, skill_io.read_json(SCRIPTS / 'shotlist.schema.json'))
 
 
@@ -237,7 +237,7 @@ def test_schema_cli_rejects_bad_structure(tmp_path, monkeypatch):
 
 def test_skill_metadata_references_and_independence():
     content = (SKILL / 'SKILL.md').read_text()
-    assert len(content.splitlines()) <= 300
+    assert len(content.splitlines()) <= 120
     frontmatter = content.split('---', 2)[1]
     assert 'name: industrial-explainer-storyboard' in frontmatter
     description = next(line.partition(':')[2].strip() for line in frontmatter.splitlines() if line.startswith('description:'))
@@ -252,14 +252,14 @@ def test_skill_metadata_references_and_independence():
     for script in SCRIPTS.glob('*.py'):
         for node in ast.walk(ast.parse(script.read_text())):
             if isinstance(node, ast.ImportFrom) and node.module:
-                assert node.module.split('.')[0] in sys.stdlib_module_names | {'_rules', 'skill_io', 'compute_analogy', 'resolve_text'}
+                assert node.module.split('.')[0] in sys.stdlib_module_names | {'_rules', 'skill_io', 'compute_analogy', 'resolve_text', 'claim_rules', 'accuracy_rules'}
             elif isinstance(node, ast.Import):
                 assert all(a.name.split('.')[0] in sys.stdlib_module_names for a in node.names)
 
 
 def test_eval_manifest_and_assertions(tmp_path):
     cases = skill_io.read_json(SKILL / 'evals/evals.json')['evals']
-    assert len(cases) == 5 and len({case['id'] for case in cases}) == 5
+    assert len(cases) == 12 and len({case['id'] for case in cases}) == 12
     facts, assets, meta, rig = sample_input()
     shots = skill_io.read_json(SKILL / 'evals/fixtures/standard/shotlist.json')
     report = skill_validator.validate(facts, shots, assets, meta, rig)

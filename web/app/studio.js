@@ -38,6 +38,8 @@ export function createStudio(ctx) {
     if (seek) {
       const shot = ctx.state.timeline.shots?.find(s => s.id === id), player = $('#player-frame')?.contentWindow?.__player;
       if (!shot) { toast(`时间线尚未包含镜头 ${id}，请生成或更新预览`); return; }
+      const film = $('#scale-film-preview');
+      if(film) { film.currentTime=Math.min(shot.start+.6,shot.end-.05); return; }
       if (!player || player !== readyPlayer) { toast('播放器尚未就绪，请等待加载完成后重试'); return; }
       Promise.resolve().then(() => player.seek(Math.min(shot.start + 0.6, shot.end - 0.05))).catch(() => toast('播放器跳转失败，请检查时间线'));
     }
@@ -50,6 +52,7 @@ export function createStudio(ctx) {
       if (!status) { status = document.createElement('div'); status.id = 'preview-status'; host.append(status); }
       if (status.innerHTML !== html) status.innerHTML = html;
       const frame = $('#player-frame'); if (frame) frame.hidden = true;
+      const film = $('#scale-film-preview'); if(film) { film.pause(); film.hidden=true; }
     };
     if (ctx.state.pid && !ctx.state.timelineLoaded) {
       placeholder('<div class="preview-empty" role="status">正在加载时间线…</div>');
@@ -59,6 +62,29 @@ export function createStudio(ctx) {
     if (running) {
       placeholder(`<div class="preview-empty preview-running" role="status"><span class="eyebrow">智能体正在生成视频</span><h2>正在生成：${esc(progress.label)}</h2><progress max="100" ${progress.percent != null ? `value="${progress.percent}"` : ''} aria-label="当前阶段进度"></progress><p>${esc(progress.progress)}</p><p class="generation-summary">${esc(progress.summary)}</p><ul class="completed-stages" aria-label="已完成阶段">${progress.completed.map(([,label]) => `<li>✓ ${esc(label)}</li>`).join('')}</ul></div>`);
       return;
+    }
+    if(ctx.state.project?.render_mode==='scale_film') {
+      const current=ctx.state.project.scale_film_ready===true && ctx.state.timeline.render_mode==='scale_film' && ctx.state.run.state==='done';
+      if(!current) {
+        const message=ctx.state.run.state==='error'?'本轮制作未完成。请查看右侧原因，修正后重跑。':ctx.state.timeline.render_mode==='scale_film'?'参数或分镜已有变化，需重新生成当前版本；旧片不会作为新结果展示。':'选择好参数与目标时长，从分镜规划生成尺度短片；成片完成后将在这里播放。';
+        placeholder(`<div class="preview-empty" role="status"><span class="eyebrow">主梁尺度短片</span><h2>从一个数字，到看得见的长度</h2><p>${message}</p></div>`);
+        return;
+      }
+      const key=JSON.stringify([ctx.state.pid,ctx.state.run.run,ctx.state.run.finished_at]);
+      $('#preview-status')?.remove();
+      const existing=$('#scale-film-preview');
+      if(existing && key===previewKey) { existing.hidden=false; return; }
+      unsubscribe();unsubscribe=()=>{};readyPlayer=null;previewKey=key;
+      const film=document.createElement('video');film.id='scale-film-preview';film.controls=true;film.playsInline=true;film.preload='metadata';film.setAttribute('aria-label','尺度短片成片');
+      film.src=`${fileURL(ctx.state.pid,'renders/final.mp4')}?v=${encodeURIComponent(ctx.state.run.run || '')}`;
+      film.addEventListener('timeupdate',()=>{
+        const shot=ctx.state.timeline.shots?.find(s=>film.currentTime>=s.start && film.currentTime<s.end);
+        if(!shot)return;
+        if(shot.id!==selected && !editing && !$('#shot-detail').contains(document.activeElement))select(shot.id);
+        document.querySelectorAll('.shot-card').forEach(card=>card.classList.toggle('playing',card.dataset.shot===shot.id));
+      });
+      film.addEventListener('error',()=>toast('成片加载失败，请检查本轮渲染与合成结果'));
+      host.replaceChildren(film);return;
     }
     if (!exists) {
       if ($('#player-frame')) { unsubscribe(); unsubscribe = () => {}; readyPlayer = null; previewKey = ''; host.replaceChildren(); }
@@ -89,7 +115,7 @@ export function createStudio(ctx) {
   }
   function render() {
     preview();
-    const ready = ctx.state.run.state === 'done' || Boolean(ctx.state.report.generated_at);
+    const ready = ctx.state.project?.render_mode==='scale_film' ? ctx.state.project.scale_film_ready===true && ctx.state.run.state==='done' : ctx.state.run.state === 'done' || Boolean(ctx.state.report.generated_at);
     $('#film-links').innerHTML = ready ? `<a class="button primary" href="${fileURL(ctx.state.pid,'renders/final.mp4')}" download>↓ 下载成片</a><a class="button" target="_blank" rel="noopener" href="${fileURL(ctx.state.pid,'report.html')}">查看溯源报告 ↗</a>` : '';
     const next = JSON.stringify([ctx.state.pid, ctx.state.shotlist, ctx.state.timeline, ctx.state.issues, ctx.state.facts]);
     if (next !== signature) { signature = next; if (!getShots().some(s => s.id === selected)) selected = getShots()[0]?.id || null; timeline(); if (!editing && !$('#shot-detail').contains(document.activeElement)) detail(); }

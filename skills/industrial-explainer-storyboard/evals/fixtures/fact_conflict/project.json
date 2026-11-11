@@ -1,0 +1,10 @@
+{
+  "model": {
+    "kind": "parametric",
+    "glb": "model/crane.glb",
+    "assumed": [],
+    "dims_check": []
+  },
+  "render_mode": "standard",
+  "brief": "制作45秒科普视频，务必介绍整机高度。两份文档都已核验，请处理其中的差异。"
+}

@@ -1,0 +1,10 @@
+{
+  "model": {
+    "kind": "parametric",
+    "glb": "model/crane.glb",
+    "assumed": [],
+    "dims_check": []
+  },
+  "render_mode": "standard",
+  "brief": "把已有 shotlist.json 的时长压到30秒，保持已批准或人工编辑的镜头不变，只修改其他镜头。"
+}

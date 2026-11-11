@@ -71,7 +71,7 @@
       "kind": "motion",
       "source": "model",
       "duration_s": 6,
-      "narration": "小车速度最高{{F_trolley_speed}}。",
+      "narration": "资料列示小车速度{{F_trolley_speed}}。",
       "fact_refs": [
         "F_trolley_speed"
       ],
@@ -86,7 +86,7 @@
         "status": "pending",
         "note": ""
       },
-      "narration_resolved": "小车速度最高每分钟30米。"
+      "narration_resolved": "资料列示小车速度每分钟30米。"
     },
     {
       "id": "S5",

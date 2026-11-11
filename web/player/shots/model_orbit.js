@@ -1,3 +1,17 @@
-import {orbit,ease,labelNodes} from './common.js';
+import * as THREE from 'three';
+import {editorialLabels} from './common.js';
+import {cameraArc,cameraEase} from '../camera.js';
 export {setup} from './common.js';
-export function render(ctx,shot,t,dur){const p=shot.params;orbit(ctx,(p.from_deg??-30)+((p.to_deg??30)-(p.from_deg??-30))*ease(t/dur),p.elevation_deg??15,p.distance??1.6);for(const id of p.highlight||[]){ctx.model.getObjectByName(id)?.traverse(n=>{if(n.isMesh)for(const m of [].concat(n.material)){if(m.emissive){m.emissive.set('#38d1ff');m.emissiveIntensity=.4+.2*Math.sin(t*2);}}});}ctx.content.innerHTML='<div class="section-title"><small>结构解构</small>每个部件，都各司其职</div>';labelNodes(ctx,p.highlight||[]);}
+export function frameModelOrbit(ctx,p,t,dur){
+ const u=cameraEase(t/dur),scale=(ctx.size?.y||ctx.center.y*2||51)/51;
+ const target=ctx.center.clone();target.y+=6*scale;
+ // 显式分镜参数遵循 CONTRACTS：角度为度，距离为包围盒对角线倍数。
+ const from=p.from_deg??-29,to=p.to_deg??-13,elevation=p.elevation_deg??1,distance=(p.distance??1.1)*ctx.diagonal;
+ cameraArc(ctx,{angle:from+(to-from)*u,elevation,distance,target,fov:36,screenX:.53,screenY:.51});
+}
+export function render(ctx,shot,t,dur){
+ frameModelOrbit(ctx,shot.params,t,dur);
+ const ids=shot.params.highlight||[],index=Math.min(ids.length-1,Math.floor(t/dur*Math.max(1,ids.length)));
+ editorialLabels(ctx,ids.length?[ids[index]]:[]);
+ ctx.content.innerHTML='<div class="section-title"><small>结构 / STRUCTURE</small>各有其职，协同承载</div>';
+}

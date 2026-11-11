@@ -1,0 +1,249 @@
+{
+  "cases": [
+    {
+      "case": "bridge_crane",
+      "source": "/private/tmp/claude-501/-Users-mac/7d70213b-e3f3-4a96-a8d8-38ca43385595/scratchpad/t21b_par/bridge_crane/evals/workspace/iteration-1/benchmark.json",
+      "overall": {
+        "with_skill": {
+          "expected": 3,
+          "completed": 0,
+          "judged": 0,
+          "prose": null,
+          "win_rate": null
+        },
+        "without_skill": {
+          "expected": 3,
+          "completed": 0,
+          "judged": 0,
+          "prose": null,
+          "win_rate": null
+        }
+      }
+    },
+    {
+      "case": "edit_preserve",
+      "source": "/private/tmp/claude-501/-Users-mac/7d70213b-e3f3-4a96-a8d8-38ca43385595/scratchpad/t21b_par/edit_preserve/evals/workspace/iteration-1/benchmark.json",
+      "overall": {
+        "with_skill": {
+          "expected": 3,
+          "completed": 0,
+          "judged": 0,
+          "prose": null,
+          "win_rate": null
+        },
+        "without_skill": {
+          "expected": 3,
+          "completed": 0,
+          "judged": 0,
+          "prose": null,
+          "win_rate": null
+        }
+      }
+    },
+    {
+      "case": "english_facts",
+      "source": "/private/tmp/claude-501/-Users-mac/7d70213b-e3f3-4a96-a8d8-38ca43385595/scratchpad/t21b_par/english_facts/evals/workspace/iteration-1/benchmark.json",
+      "overall": {
+        "with_skill": {
+          "expected": 3,
+          "completed": 0,
+          "judged": 0,
+          "prose": null,
+          "win_rate": null
+        },
+        "without_skill": {
+          "expected": 3,
+          "completed": 0,
+          "judged": 0,
+          "prose": null,
+          "win_rate": null
+        }
+      }
+    },
+    {
+      "case": "exaggeration_request",
+      "source": "/private/tmp/claude-501/-Users-mac/7d70213b-e3f3-4a96-a8d8-38ca43385595/scratchpad/t21b_par/exaggeration_request/evals/workspace/iteration-1/benchmark.json",
+      "overall": {
+        "with_skill": {
+          "expected": 3,
+          "completed": 0,
+          "judged": 0,
+          "prose": null,
+          "win_rate": null
+        },
+        "without_skill": {
+          "expected": 3,
+          "completed": 0,
+          "judged": 0,
+          "prose": null,
+          "win_rate": null
+        }
+      }
+    },
+    {
+      "case": "fact_conflict",
+      "source": "/private/tmp/claude-501/-Users-mac/7d70213b-e3f3-4a96-a8d8-38ca43385595/scratchpad/t21b_par/fact_conflict/evals/workspace/iteration-1/benchmark.json",
+      "overall": {
+        "with_skill": {
+          "expected": 3,
+          "completed": 0,
+          "judged": 0,
+          "prose": null,
+          "win_rate": null
+        },
+        "without_skill": {
+          "expected": 3,
+          "completed": 0,
+          "judged": 0,
+          "prose": null,
+          "win_rate": null
+        }
+      }
+    },
+    {
+      "case": "hostile_brief",
+      "source": "/private/tmp/claude-501/-Users-mac/7d70213b-e3f3-4a96-a8d8-38ca43385595/scratchpad/t21b_par/hostile_brief/evals/workspace/iteration-1/benchmark.json",
+      "overall": {
+        "with_skill": {
+          "expected": 3,
+          "completed": 1,
+          "judged": 0,
+          "prose": null,
+          "win_rate": null
+        },
+        "without_skill": {
+          "expected": 3,
+          "completed": 0,
+          "judged": 0,
+          "prose": null,
+          "win_rate": null
+        }
+      }
+    },
+    {
+      "case": "missing_weld",
+      "source": "/private/tmp/claude-501/-Users-mac/7d70213b-e3f3-4a96-a8d8-38ca43385595/scratchpad/t21b_par/missing_weld/evals/workspace/iteration-1/benchmark.json",
+      "overall": {
+        "with_skill": {
+          "expected": 3,
+          "completed": 0,
+          "judged": 0,
+          "prose": null,
+          "win_rate": null
+        },
+        "without_skill": {
+          "expected": 3,
+          "completed": 0,
+          "judged": 0,
+          "prose": null,
+          "win_rate": null
+        }
+      }
+    },
+    {
+      "case": "photoreal_bid",
+      "source": "/private/tmp/claude-501/-Users-mac/7d70213b-e3f3-4a96-a8d8-38ca43385595/scratchpad/t21b_par/photoreal_bid/evals/workspace/iteration-1/benchmark.json",
+      "overall": {
+        "with_skill": {
+          "expected": 3,
+          "completed": 0,
+          "judged": 0,
+          "prose": null,
+          "win_rate": null
+        },
+        "without_skill": {
+          "expected": 3,
+          "completed": 0,
+          "judged": 0,
+          "prose": null,
+          "win_rate": null
+        }
+      }
+    },
+    {
+      "case": "reference_only",
+      "source": "/private/tmp/claude-501/-Users-mac/7d70213b-e3f3-4a96-a8d8-38ca43385595/scratchpad/t21b_par/reference_only/evals/workspace/iteration-1/benchmark.json",
+      "overall": {
+        "with_skill": {
+          "expected": 3,
+          "completed": 0,
+          "judged": 0,
+          "prose": null,
+          "win_rate": null
+        },
+        "without_skill": {
+          "expected": 3,
+          "completed": 0,
+          "judged": 0,
+          "prose": null,
+          "win_rate": null
+        }
+      }
+    },
+    {
+      "case": "short_15s",
+      "source": "/private/tmp/claude-501/-Users-mac/7d70213b-e3f3-4a96-a8d8-38ca43385595/scratchpad/t21b_par/short_15s/evals/workspace/iteration-1/benchmark.json",
+      "overall": {
+        "with_skill": {
+          "expected": 3,
+          "completed": 1,
+          "judged": 0,
+          "prose": null,
+          "win_rate": null
+        },
+        "without_skill": {
+          "expected": 3,
+          "completed": 0,
+          "judged": 0,
+          "prose": null,
+          "win_rate": null
+        }
+      }
+    },
+    {
+      "case": "standard",
+      "source": "/private/tmp/claude-501/-Users-mac/7d70213b-e3f3-4a96-a8d8-38ca43385595/scratchpad/t21b_par/standard/evals/workspace/iteration-1/benchmark.json",
+      "overall": {
+        "with_skill": {
+          "expected": 3,
+          "completed": 0,
+          "judged": 0,
+          "prose": null,
+          "win_rate": null
+        },
+        "without_skill": {
+          "expected": 3,
+          "completed": 0,
+          "judged": 0,
+          "prose": null,
+          "win_rate": null
+        }
+      }
+    },
+    {
+      "case": "unverified",
+      "source": "/private/tmp/claude-501/-Users-mac/7d70213b-e3f3-4a96-a8d8-38ca43385595/scratchpad/t21b_par/unverified/evals/workspace/iteration-1/benchmark.json",
+      "overall": {
+        "with_skill": {
+          "expected": 3,
+          "completed": 0,
+          "judged": 0,
+          "prose": null,
+          "win_rate": null
+        },
+        "without_skill": {
+          "expected": 3,
+          "completed": 0,
+          "judged": 0,
+          "prose": null,
+          "win_rate": null
+        }
+      }
+    }
+  ],
+  "generation_outcomes": {
+    "You've hit your 5-hour limit · resets 10:20pm (Asia/Singapore)": 70,
+    "completed": 2
+  },
+  "conclusion": "72 次生成中 2 次完成、70 次达到 Claude 用量限制；无有效盲评配对，不能判断技能收益。触发评测日志仅完成1/40。此为 T21b 原评测记录，不是当前 T21c 的真实模型验收。"
+}

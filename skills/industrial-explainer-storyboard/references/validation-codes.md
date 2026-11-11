@@ -6,6 +6,12 @@ UNVERIFIED_FACT / REFERENCE_ASSET_CLAIM 虽为 warn，创作约束仍禁止引�
 
 | code | severity | 含义与典型触发 | 字段与具体修法 |
 |---|---|---|---|
+| QUOTE_MISMATCH | block | 引用值、单位或文字事实不在 source.quote 中；规范化全角、千分位、小数及单位同义词后比较，不能子串误认。交人工核对原文，不改摘录迁就参数。 |
+| QUOTE_ABSENT | warn | 被引用事实无 quote；补齐原文摘录后重新核验。 |
+| ANALOGY_ROUNDING | block | ratio、参照尺寸或比较词违背真实比值/容差；重新运行 compute_analogy。 |
+| UNSUPPORTED_CLAIM | block | support 不存在、不可引用，generic 含具体信息，或已登记 claims 遗漏台词分句；补齐出处。 |
+| CLAIMS_MISSING | info | 兼容旧分镜；skill 在 delivery_warnings 复制为 warn，交付前补齐每句陈述。 |
+| MOTION_SPEEDUP_MISMATCH | block | 运动超过资料速度但声明的 speedup 小于所需倍速；使用程序计算的标注。 |
 | UNKNOWN_FACT | block | {{F_missing}} | `fact_refs/narration/params`：删除不存在的参数引用，并在 narration、fact_refs、params.facts、params.fact 及相关类比中改用同一已确认参数 ID |
 | REJECTED_FACT | block | 引用 status=rejected 的 F_span | `fact_refs/narration/params`：移除被否决参数的台词、画面字段及关联类比；需要恢复时先让人工核实原始文档 |
 | UNVERIFIED_FACT | warn | 引用 status=extracted/needs_review 的 F_span | `fact_refs/narration/params`：暂时移除该参数的所有引用，将缺失内容列入人工确认项；不得自行改写 facts.status |
@@ -35,7 +41,7 @@ UNVERIFIED_FACT / REFERENCE_ASSET_CLAIM 虽为 warn，创作约束仍禁止引�
 
 ## 输入范围和报告解释
 
-缺 project 时 MODEL_DIMS_MISMATCH / MODEL_ASSUMED 跳过；缺 rig 时三个 MOTION_* 跳过，报告 skipped 写明原因。
+缺 project 时 MODEL_DIMS_MISMATCH / MODEL_ASSUMED 跳过；缺 rig 时运动轴、范围、速度与倍速检查跳过，报告 skipped 写明原因。
 传入空 rig.axes 与不传 rig 不同：空轴表是已知没有轴，会报 MOTION_AXIS_UNAVAILABLE。
 不传 assets 等于空素材库，引用实拍仍报 ASSET_MISSING，不跳过。
 模式通过 --mode photoreal 或 project.render_mode 指定；不指定时为标准模式。
@@ -44,3 +50,30 @@ UNVERIFIED_FACT / REFERENCE_ASSET_CLAIM 虽为 warn，创作约束仍禁止引�
 同一镜头多个错误引用或裸数字逐项报告；同一参数在同镜头多处引用按后端规则去重。
 schema 格式问题另列 input_errors，不创造后端没有的真实性 code；任何格式错误都会使 passed=false。
 人工确认项单列 manual_review，包含未被引用的未确认/否决参数，避免用户点名参数被静默忽略。
+
+## 宣称、冲突与量纲
+
+| code | 严重度 | 触发与修法 |
+|---|---|---|
+| EXAGGERATION | block | 台词、caption、标题/副标题（含顶层 title）中出现无同句排名证据的最高级；例如「国内最大」改为「起重量 {{F_rated_load}}」。 |
+| ABSOLUTE_CLAIM | warn | 零误差、绝对安全、完美、永不等承诺；改成带出处的精度参数及条件。 |
+| FACT_CONFLICT | block | verified/confirmed 事实同名、同 id 或同 key 但数值不同，任一条被直接/间接引用；交人工确认，不自行选择。等值的常用单位换算不算冲突。 |
+| UNIT_SUSPECT | warn | 参数名称或规范 ID 与单位量纲不符；核实原文的数值与单位，不自动修单位。 |
+
+词表和简单量纲表的唯一数据源为 [claim-rules.json](claim-rules.json)，后端和独立脚本都读取它；增词后须跑两端 parity。
+
+facts 支持可选字段 `claim_type: "ranking"`，缺省为普通参数。排名事实仍保持数值 value：例如 `{"id":"F_domestic_first","name":"国内首台认证序位","value":1,"unit":"","claim_type":"ranking","status":"verified","source":{"doc":"认证证书.pdf","page":1,"quote":"经认证为国内首台，认证序位1"}}`。这是格式示例，不是真实证书。
+
+豁免例句：「证书确认国内首台，认证序位{{F_domestic_first}}。」只有 verified、出处完整且对应宣称在 quote 中、同句显式占位引用才可豁免；confirmed、只列 fact_refs、隔句/跨字段引用均不可豁免。不得把地方证书范围扩展为全球排名，也不得拿起重量等普通事实冒充排名。ABSOLUTE_CLAIM 不因排名事实豁免。
+
+发现冲突即列入人工确认项，暂不引用冲突两方；即使不引用而没有 block，也必须在报告说明需求中未完成的内容。不要删改原始 facts 或将另一条降级来通过校验。
+
+## 陈述与量化指标
+
+每镜头可选 claims 数组，条目含 text 与 support（事实 ID、素材 ID 或 generic）。后端旧数据缺失记 info；技能交付时列为 warn，不得省略。具体用途和结构形式同样需要文字事实支撑：`{"id":"F_structure","name":"结构形式","type":"qualitative","value":"采用箱形主梁","unit":"","status":"verified","source":{"doc":"说明.pdf","page":1,"quote":"采用箱形主梁"}}`。此处仅为格式示例。
+
+规则词表与正则见 claim-rules.json 的 specific_claim_terms / specific_claim_patterns；涵盖型号、客户、项目、地名、年份、认证及排名，规则不能穷举所有专名。support 存在不等于语义蕴含；端到端可溯源率进一步保守核对原句与证据，无法对齐的文字改写不算通过。
+
+误报豁免：「一根头发丝」「第一步」「唯一要做的」及有已确认引用的「最高可达 {{F_x}}」。后一项仅表示参数上限，不允许扩展为国内/全球排名。
+
+变异召回统计指定问题码命中的 block/warn；无关警告不计命中。正确样本的任何 block/warn、CHECK_ERROR 或 schema 错误都算误报。可溯源率分母独立从全部台词分句提取，不使用模型登记的 claims 数量；缺失、空产物、失败不会成为100%。

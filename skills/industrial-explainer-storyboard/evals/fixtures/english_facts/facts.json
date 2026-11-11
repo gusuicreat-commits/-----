@@ -1,0 +1,40 @@
+{
+  "facts": [
+    {
+      "id": "F_rated_load",
+      "name": "Rated lifting capacity",
+      "value": 450,
+      "unit": "t",
+      "status": "verified",
+      "source": {
+        "doc": "参数表.pdf",
+        "page": 1,
+        "quote": "Rated lifting capacity 450 t"
+      }
+    },
+    {
+      "id": "F_span",
+      "name": "Span",
+      "value": 28.5,
+      "unit": "m",
+      "status": "verified",
+      "source": {
+        "doc": "参数表.pdf",
+        "page": 2,
+        "quote": "Span 28.5 m"
+      }
+    },
+    {
+      "id": "F_hoist_speed",
+      "name": "Hoisting speed",
+      "value": 6,
+      "unit": "m/min",
+      "status": "verified",
+      "source": {
+        "doc": "参数表.pdf",
+        "page": 3,
+        "quote": "Hoisting speed 6 m/min"
+      }
+    }
+  ]
+}

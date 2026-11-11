@@ -1,0 +1,10 @@
+{
+  "model": {
+    "kind": "parametric",
+    "glb": "model/crane.glb",
+    "assumed": [],
+    "dims_check": []
+  },
+  "render_mode": "standard",
+  "brief": "制作15秒展会短视频，只要3到4个镜头，突出一个关键参数。"
+}

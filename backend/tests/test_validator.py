@@ -37,10 +37,11 @@ def codes(pid):
 
 
 def test_valid_resolve_and_persistence(scenario):
-    assert validate(scenario, "r1") == {"issues": []}
-    assert storage.read_json(scenario, "issues.json") == {"issues": []}
+    result = validate(scenario, "r1")
+    assert {(i["code"], i["severity"]) for i in result["issues"]} == {("CLAIMS_MISSING", "info"), ("QUOTE_ABSENT", "warn")}
+    assert storage.read_json(scenario, "issues.json") == result
     assert storage.read_json(scenario, "shotlist.json")["shots"][0]["narration_resolved"] == "主梁长104米。"
-    assert events.read_events(scenario)[-1]["summary"] == "校验 1 个镜头：0 个阻断、0 个警告"
+    assert events.read_events(scenario)[-1]["summary"] == "校验 1 个镜头：0 个阻断、1 个警告"
 
 
 @pytest.mark.parametrize("updates,expected", [
@@ -92,7 +93,7 @@ def test_fact_status_and_indirect_analogy(scenario, status, expected):
     analogy = compute("A_length_football_field", facts["facts"][0], "football_field", "length")
     write_shot(scenario, shot("analogy", fact_refs=[], narration="{{A_length_football_field}}", params={"analogy": analogy["id"]}), [analogy])
     found = codes(scenario)
-    assert (expected in found) if expected else not found
+    assert (expected in found) if expected else found == {"CLAIMS_MISSING", "QUOTE_ABSENT"}
     saved = storage.read_json(scenario, "shotlist.json")["shots"][0]
     assert saved["narration_resolved"] == analogy["text"]
 
@@ -124,7 +125,7 @@ def test_model_metadata_and_aggregate_review(scenario):
     storage.write_json(scenario, "project.json", project)
     storage.write_json(scenario, "shotlist.json", {"shots": [shot(id=f"S{i}", duration_s=20, review={"status": "pending"}) for i in (1, 2)]})
     issues = validate(scenario, "r1")["issues"]
-    assert {i["code"] for i in issues} == {"MODEL_DIMS_MISMATCH", "MODEL_ASSUMED", "NOT_REVIEWED"}
+    assert {i["code"] for i in issues} == {"MODEL_DIMS_MISMATCH", "MODEL_ASSUMED", "NOT_REVIEWED", "CLAIMS_MISSING", "QUOTE_ABSENT"}
     assert len([i for i in issues if i["code"] == "NOT_REVIEWED"]) == 1
     assert "2 个" in issues[-1]["message"]
     project["model"]["kind"] = "step"
@@ -150,7 +151,7 @@ def test_source_rules(scenario, kind, has_model):
 def test_asset_safe_claim(scenario, provenance, narration):
     storage.write_json(scenario, "assets.json", {"assets": [{"id": "IMG_01", "provenance": provenance}]})
     write_shot(scenario, shot("real_media", source="real", params={"asset": "IMG_01"}, narration=narration))
-    assert not codes(scenario)
+    assert codes(scenario) == {"CLAIMS_MISSING", "QUOTE_ABSENT"}
 
 
 def test_checks_continue_after_bad_data(scenario):
@@ -177,7 +178,7 @@ def test_check_error_from_motion_does_not_hide_other_checks(scenario, monkeypatc
 @pytest.mark.parametrize("duration", [30, 60])
 def test_duration_boundaries(scenario, duration):
     write_shot(scenario, shot(duration_s=duration))
-    assert not codes(scenario)
+    assert codes(scenario) == {"CLAIMS_MISSING", "QUOTE_ABSENT"}
 
 
 @pytest.mark.parametrize("narration,blocked", [

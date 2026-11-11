@@ -1,0 +1,49 @@
+(node:2667) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[2m[WebServer] [22m(node:2675) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 11 tests using 1 worker
+
+(node:2678) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:2678) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:2678) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 tests/look.spec.ts:34:1 › T22每类标准镜头重复和乱序定位像素完全相同 (2.1s)
+  ✓   2 tests/look.spec.ts:46:1 › T22c整段镜头的厂房显隐固定且不被上边缘截断 (778ms)
+  ✓   3 tests/look.spec.ts:68:1 › T22门机受光面橙红、天空偏蓝且不过曝 (540ms)
+  ✓   4 tests/look.spec.ts:96:1 › T22混凝土大板细缝无密集高对比网格 (726ms)
+  ✓   5 tests/look.spec.ts:116:1 › T22标准与缺少写实帧的回退一致，草稿关闭AO和泛光 (2.1s)
+  ✓   6 tests/look.spec.ts:127:1 › T22新模型楼房类比与焊缝微距往返正常 (582ms)
+  ✓   7 tests/look.spec.ts:135:1 › T22本机1080p完整GPU单帧不超过120ms且GLB加载不超过1秒 (555ms)
+  -   8 tests/look.spec.ts:151:1 › T22整片标准模式输出50秒且总耗时不超过5分钟
+  ✓   9 tests/look.spec.ts:208:43 › T22b独立投影mask亮度与橙红色及逐镜头截图-standard (3.7s)
+  ✓  10 tests/look.spec.ts:208:43 › T22b独立投影mask亮度与橙红色及逐镜头截图-draft (897ms)
+  ✘  11 tests/look.spec.ts:246:1 › T22c硬件朝阳背阳亮度比和地面投影比 (918ms)
+
+
+  1) tests/look.spec.ts:246:1 › T22c硬件朝阳背阳亮度比和地面投影比 ────────────────────────────────────────────────
+
+    Error: 朝阳/背阳 sRGB 亮度比
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBeGreaterThanOrEqual[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: >= [32m3[39m
+    Received:    [31m1.4498047448227847[39m
+
+      305 |  expect(result.device,'亮度比验收必须使用硬件GPU').not.toMatch(/swiftshader|llvmpipe|software/i);
+      306 |  expect(result.face.sunCount).toBeGreaterThan(100);expect(result.face.shadeCount).toBeGreaterThan(100);
+    > 307 |  expect.soft(result.face.ratio,'朝阳/背阳 sRGB 亮度比').toBeGreaterThanOrEqual(3);
+          |                                                  ^
+      308 |  expect(result.ground.count).toBeGreaterThan(12);
+      309 |  expect(result.ground.ratio,'投影/同位置受光地面 sRGB 亮度比').toBeLessThanOrEqual(.55);
+      310 | });
+        at /Users/mac/Desktop/AI入企黑客松/科普视频智能体/web/tests/look.spec.ts:307:50
+
+    Error Context: test-results/aster-look/look-T22c硬件朝阳背阳亮度比和地面投影比/error-context.md
+
+  1 failed
+    tests/look.spec.ts:246:1 › T22c硬件朝阳背阳亮度比和地面投影比 ─────────────────────────────────────────────────
+  1 skipped
+  9 passed (15.3s)
